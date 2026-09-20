@@ -214,11 +214,8 @@ def index(request: Request) -> Any:
             "doc": doc,
             "today": today,
             "attention": calc.attention(doc, today),
-            "summary": calc.summary(doc),
-            "balances": calc.pot_balances(doc),
             "pots_total": calc.pots_total(doc),
             "wealth_total": calc.wealth_total(doc),
-            "payday_run": doc.payday_run_for(calc.current_month(today)),
         },
     )
 
@@ -293,6 +290,56 @@ async def payday_run(request: Request) -> Any:
     _apply(change)
     logger.info("payday run recorded for %s", month)
     return _back("/pots")
+
+
+@router.post("/payday/transfers", include_in_schema=False)
+async def payday_transfers_save(request: Request) -> Any:
+    """Save every editable transfer amount in one write.
+
+    The `tracks_pots` transfer and the remainder step have nothing here to
+    save — the first is derived from the pots, the second is whatever is left.
+    """
+    form = await request.form()
+
+    def change(doc: Document) -> Document:
+        for transfer in doc.transfers:
+            raw = form.get(f"transfer_{transfer.id}")
+            if raw is not None and not transfer.tracks_pots:
+                text = str(raw).strip()
+                transfer.amount_pence = parse_money(text) if text else None
+        return doc
+
+    _apply(change)
+    return _back("/payday")
+
+
+@router.post("/payday/transfers/add", include_in_schema=False)
+def payday_transfer_add(
+    label: str = Form(...), amount: str = Form(default=""), note: str = Form(default="")
+) -> Any:
+    def change(doc: Document) -> Document:
+        text = amount.strip()
+        doc.transfers.append(
+            Transfer(
+                label=label.strip(),
+                amount_pence=parse_money(text) if text else None,
+                note=note.strip(),
+            )
+        )
+        return doc
+
+    _apply(change)
+    return _back("/payday")
+
+
+@router.post("/payday/transfers/{transfer_id}/delete", include_in_schema=False)
+def payday_transfer_delete(transfer_id: str) -> Any:
+    def change(doc: Document) -> Document:
+        doc.transfers = [t for t in doc.transfers if t.id != transfer_id]
+        return doc
+
+    _apply(change)
+    return _back("/payday")
 
 
 # --- pots ---------------------------------------------------------------------
@@ -428,8 +475,6 @@ def monthly_page(request: Request) -> Any:
             "doc": doc,
             "today": _today(),
             "summary": calc.summary(doc),
-            "monthly_total": calc.pots_monthly_total(doc),
-            "transfers": [(t, calc.transfer_amount(doc, t.id)) for t in doc.transfers],
         },
     )
 
@@ -456,11 +501,6 @@ async def monthly_save(request: Request) -> Any:
             # value. Only lines the form actually rendered are touched.
             if form.get(f"present_{line.id}") is not None:
                 line.active = form.get(f"active_{line.id}") is not None
-        for transfer in doc.transfers:
-            raw = form.get(f"transfer_{transfer.id}")
-            if raw is not None and not transfer.tracks_pots:
-                text = str(raw).strip()
-                transfer.amount_pence = parse_money(text) if text else None
         return doc
 
     _apply(change)
@@ -488,35 +528,6 @@ def monthly_delete(line_id: str) -> Any:
     def change(doc: Document) -> Document:
         doc.income = [line for line in doc.income if line.id != line_id]
         doc.outgoings = [line for line in doc.outgoings if line.id != line_id]
-        return doc
-
-    _apply(change)
-    return _back("/monthly")
-
-
-@router.post("/monthly/transfers/add", include_in_schema=False)
-def transfer_add(
-    label: str = Form(...), amount: str = Form(default=""), note: str = Form(default="")
-) -> Any:
-    def change(doc: Document) -> Document:
-        text = amount.strip()
-        doc.transfers.append(
-            Transfer(
-                label=label.strip(),
-                amount_pence=parse_money(text) if text else None,
-                note=note.strip(),
-            )
-        )
-        return doc
-
-    _apply(change)
-    return _back("/monthly")
-
-
-@router.post("/monthly/transfers/{transfer_id}/delete", include_in_schema=False)
-def transfer_delete(transfer_id: str) -> Any:
-    def change(doc: Document) -> Document:
-        doc.transfers = [t for t in doc.transfers if t.id != transfer_id]
         return doc
 
     _apply(change)

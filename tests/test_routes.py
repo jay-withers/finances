@@ -91,7 +91,10 @@ def test_rerunning_with_a_different_amount_corrects_it(client, stored):
     assert calc.pot_balances(reload())[holidays.id] == 127_500 + 50_000
 
 
-def test_payday_clears_the_dashboard_nag(client, stored):
+def test_payday_clears_the_dashboard_nag(client, stored, monkeypatch):
+    """The nag only starts on the 28th, so the dashboard's clock is pinned here
+    rather than relying on whatever day the suite happens to run on."""
+    monkeypatch.setattr("finances.api.routes._today", lambda: date(2026, 9, 29))
     assert "Payday not yet run" in client.get("/").text
     holidays = pot_named(stored, "Holidays")
     client.post("/payday/run", data={"on": "2026-09-25", f"amount_{holidays.id}": "450"})
@@ -221,7 +224,7 @@ def test_a_row_not_on_the_form_keeps_its_active_flag(client, stored):
 def test_the_pot_tracking_transfer_cannot_be_overwritten(client, stored):
     """The whole point: one source for the pot contributions, not two."""
     tracking = next(t for t in stored.transfers if t.tracks_pots)
-    client.post("/monthly", data={f"transfer_{tracking.id}": "999"})
+    client.post("/payday/transfers", data={f"transfer_{tracking.id}": "999"})
 
     document = reload()
     updated = next(t for t in document.transfers if t.id == tracking.id)
@@ -239,7 +242,7 @@ def test_add_and_delete_lines(client):
 
 
 def test_add_a_remainder_transfer(client):
-    client.post("/monthly/transfers/add", data={"label": "Spare", "amount": "", "note": "left"})
+    client.post("/payday/transfers/add", data={"label": "Spare", "amount": "", "note": "left"})
     transfer = next(t for t in reload().transfers if t.label == "Spare")
     assert transfer.amount_pence is None
 

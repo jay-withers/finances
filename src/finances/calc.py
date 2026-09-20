@@ -71,6 +71,17 @@ def pots_monthly_total(doc: Document) -> int:
     return sum(p.monthly_pence for p in payday_pots(doc))
 
 
+def household_payday(today: date) -> date:
+    """The date both incomes have landed for `today`'s month.
+
+    Jay is paid on the 28th. Sarah is paid on the 28th too, or the Friday
+    before when the 28th falls on a weekend — so the 28th is always the
+    later, or equal, of the two, and is what "payday" means for the
+    household's own payday run.
+    """
+    return date(today.year, today.month, 28)
+
+
 # --- the monthly picture ------------------------------------------------------
 
 
@@ -247,16 +258,17 @@ def attention(doc: Document, today: date) -> Attention:
     items: list[Item] = []
 
     month = current_month(today)
-    if doc.pots and doc.payday_run_for(month) is None:
+    payday_date = household_payday(today)
+    if doc.pots and doc.payday_run_for(month) is None and today >= payday_date:
         items.append(
             Item(
                 title=f"Payday not yet run for {today:%B %Y}",
                 detail=f"{len(payday_pots(doc))} pots to top up",
                 href="/payday",
-                # Not urgent until the month is half gone: flagging it on the
-                # 1st would mean the panel is red for most of every month,
-                # which teaches people to ignore it.
-                urgent=today.day > 15,
+                # A day's grace once it lands before this turns red — the run
+                # cannot happen before the 28th, so nagging any earlier, or
+                # the instant it arrives, is noise rather than a deadline.
+                urgent=(today - payday_date).days >= 1,
             )
         )
 
