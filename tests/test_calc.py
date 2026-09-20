@@ -110,8 +110,9 @@ def test_wealth_total_uses_only_the_newest_snapshot(doc: Document):
     assert calc.wealth_total(doc) == before - 2_367_900 + 3_000_000
 
 
-def test_attention_flags_payday_renewal_and_stale_wealth(doc: Document, today: date):
-    state = calc.attention(doc, today)
+def test_attention_flags_payday_renewal_and_stale_wealth(doc: Document):
+    # On the 28th: on or after the household's payday, so the nag is live.
+    state = calc.attention(doc, date(2026, 9, 28))
     titles = [item.title for item in state.items]
 
     assert any("Payday not yet run" in t for t in titles)
@@ -136,11 +137,17 @@ def test_attention_is_quiet_when_nothing_is_due(today: date):
     assert state.quiet_renewals == 1
 
 
+def test_payday_is_not_flagged_before_the_28th(doc: Document):
+    """The run cannot happen before the 28th, so nagging earlier is just noise."""
+    early = calc.attention(doc, date(2026, 9, 20))
+    assert not any("Payday" in i.title for i in early.items)
+
+
 def test_payday_urgency_depends_on_how_late_it_is(doc: Document):
-    """Red from the 16th, not the 1st: a panel that is always red is ignored."""
-    early = calc.attention(doc, date(2026, 9, 3))
-    late = calc.attention(doc, date(2026, 9, 25))
-    assert next(i for i in early.items if "Payday" in i.title).urgent is False
+    """Not urgent the day it lands, so the panel is not red the instant it can be."""
+    on_time = calc.attention(doc, date(2026, 9, 28))
+    late = calc.attention(doc, date(2026, 9, 30))
+    assert next(i for i in on_time.items if "Payday" in i.title).urgent is False
     assert next(i for i in late.items if "Payday" in i.title).urgent is True
 
 

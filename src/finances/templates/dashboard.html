@@ -17,8 +17,8 @@
     <span class="what">Nothing needs attention</span><br>
     <span class="why">
       {{ doc.renewals | length }} renewal{{ '' if doc.renewals | length == 1 else 's' }},
-      {{ doc.pots | length }} pot{{ '' if doc.pots | length == 1 else 's' }} and
-      {{ doc.wealth_accounts | length }} wealth account{{ '' if doc.wealth_accounts | length == 1 else 's' }} checked
+      {{ doc.pots | length }} savings pot{{ '' if doc.pots | length == 1 else 's' }} and
+      {{ doc.wealth_accounts | length }} pension account{{ '' if doc.wealth_accounts | length == 1 else 's' }} checked
     </span>
   </div>
 {% endfor %}
@@ -26,60 +26,11 @@
   <p class="muted">{{ attention.quiet_renewals }} other renewal{{ '' if attention.quiet_renewals == 1 else 's' }} further out.</p>
 {% endif %}
 
-<h2>This month</h2>
-<div class="figures">
-  <div class="figure">
-    <div class="label">In</div>
-    <div class="value">{{ summary.income | money }}</div>
-  </div>
-  <div class="figure">
-    <div class="label">Out</div>
-    <div class="value">{{ summary.outgoings | money }}</div>
-  </div>
-  <div class="figure">
-    <div class="label">Savings &amp; transfers</div>
-    <div class="value">{{ summary.savings_and_spends | money }}</div>
-  </div>
-  <div class="figure">
-    <div class="label">Spare</div>
-    {# Coloured by how much room is left, because this is the number that
-       decides whether a new commitment is affordable. #}
-    <div class="value {{ 'over' if summary.spare < 0 else ('tight' if summary.spare < 5000) }}">
-      {{ summary.spare | money }}
-    </div>
-  </div>
-</div>
-
-<h2>Pots &middot; {{ pots_total | money }}</h2>
-<table>
-  <tbody>
-  {% for pot in doc.pots if not pot.archived %}
-    <tr>
-      <td><a href="/pots/{{ pot.id }}" style="text-decoration:none">{{ pot.name }}</a></td>
-      <td class="num {{ 'neg' if balances[pot.id] < 0 }}">{{ balances[pot.id] | money }}</td>
-    </tr>
-  {% else %}
-    <tr><td class="muted">No pots yet.</td></tr>
-  {% endfor %}
-  </tbody>
-</table>
+<h2><a href="/pots" style="color:inherit;text-decoration:none">Savings &middot; {{ pots_total | money }}</a></h2>
 
 {% if doc.wealth_accounts %}
-<h2>Wealth</h2>
-<div class="figures">
-  <div class="figure">
-    <div class="label">Current</div>
-    <div class="value">{{ wealth_total | money }}</div>
-  </div>
-  <div class="figure">
-    <div class="label">Pots hold</div>
-    <div class="value">{{ pots_total | money }}</div>
-  </div>
-</div>
+<h2><a href="/wealth" style="color:inherit;text-decoration:none">Pensions &middot; {{ wealth_total | money }}</a></h2>
 {% endif %}
 
-{% if not payday_run %}
-  <a class="btn" href="/payday">Run payday for {{ today.strftime('%B') }}</a>
-{% endif %}
 <form method="post" action="/logout"><button class="ghost" type="submit">Log out</button></form>
 {% endblock %}

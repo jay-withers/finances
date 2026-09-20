@@ -114,15 +114,15 @@
 </header>
 {% block nav %}
 {# Driven by the request path rather than a variable every route has to
-   remember to pass. `startswith` so /pots/<id> still lights up Pots. #}
+   remember to pass. `startswith` so /pots/<id> still lights up Savings. #}
 {% set path = request.url.path %}
 <nav>
   <a href="/"         class="{{ 'on' if path == '/' }}">Dashboard</a>
   <a href="/payday"   class="{{ 'on' if path.startswith('/payday') }}">Payday</a>
-  <a href="/pots"     class="{{ 'on' if path.startswith('/pots') }}">Pots</a>
-  <a href="/monthly"  class="{{ 'on' if path.startswith('/monthly') }}">Monthly</a>
+  <a href="/pots"     class="{{ 'on' if path.startswith('/pots') }}">Savings</a>
+  <a href="/monthly"  class="{{ 'on' if path.startswith('/monthly') }}">In / Out</a>
   <a href="/renewals" class="{{ 'on' if path.startswith('/renewals') }}">Renewals</a>
-  <a href="/wealth"   class="{{ 'on' if path.startswith('/wealth') }}">Wealth</a>
+  <a href="/wealth"   class="{{ 'on' if path.startswith('/wealth') }}">Pensions</a>
 </nav>
 {% endblock %}
 {% block body %}{% endblock %}

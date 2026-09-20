@@ -35,10 +35,11 @@ class FakeClient:
         return self.response
 
 
-def test_digest_names_everything_that_needs_attention(doc: Document, today: date):
-    composed = digest.compose(doc, today)
+def test_digest_names_everything_that_needs_attention(doc: Document):
+    # On the 28th: on or after the household's payday, so the nag is live.
+    composed = digest.compose(doc, date(2026, 9, 28))
     assert "Car MOT" in composed.text
-    assert "in 47 days" in composed.text
+    assert "in 39 days" in composed.text
     assert "Payday not yet run" in composed.text
     assert "out of date" in composed.text
     assert composed.item_count >= 3
