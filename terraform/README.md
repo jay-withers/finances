@@ -1,4 +1,82 @@
-# Terraform module
+# terraform
+
+The infrastructure for this project: everything it owns, and nothing it shares.
+
+The Container Apps environment these workloads run on is **not** here. It is
+shared, lives in [jay-withers/azure-container-apps][platform], and is resolved
+by name in `data.tf` rather than by reading its Terraform state — no shared
+state credentials, and the coupling stays a convention.
+
+Two consequences follow from that and are worth knowing before the first plan:
+
+- **`terraform plan` needs Azure credentials**, because the data sources are
+  resolved at plan time. A plan against an environment the platform has not
+  applied fails outright, which is why CI validates but never plans, and why
+  only `dev` exists here.
+- **The region is fixed.** A container app may sit in a different resource group
+  from its environment but not a different region, so the resource group takes
+  its location from the environment rather than from a variable.
+
+## What this creates
+
+| Resource | Why |
+|---|---|
+| Resource group | Everything below, in one place per environment |
+| Container app | The web application, scaled to zero |
+| Container app job | The monthly reminder digest, on a cron schedule |
+| User-assigned identity | How both workloads reach Key Vault and the document |
+| Key Vault | The passcode, the Resend key and the digest recipients |
+| Storage account + `state` container | The one JSON document that *is* the product |
+| Role assignments | The identity and the deployer, scoped to the container |
+| Managed certificate + custom domain | Only when `custom_domain_name` is set |
+
+Terraform creates **no `azurerm_key_vault_secret`**. No secret value belongs in
+source or in state, so the three secrets are set once by hand — `make secrets`
+prints the commands.
+
+## First apply
+
+```bash
+# Once per repository: the state container.
+az storage container create --name finances \
+  --account-name sttfsharedjw --auth-mode login
+
+make apply ENV=dev          # reads the plan; no -auto-approve
+make secrets                # prints the az keyvault commands to run
+make dns                    # prints the two DNS records the domain needs
+# create both records, wait for them to resolve, then:
+make apply ENV=dev          # issues the managed certificate
+make bind-domain            # the manual step the provider cannot do
+```
+
+The DNS records must resolve **before** the apply that issues the certificate:
+Azure validates them during issuance, not after.
+
+## The custom domain needs a manual step
+
+`azurerm_container_app_custom_domain` reports success without completing the
+binding. ARM needs the managed certificate's id in the bind request and the
+provider has no field to put it in ([#27362][bug], open), so `make bind-domain`
+finishes it with the CLI. A plan afterwards reports no diff, because the CLI
+sets the binding type the resource already declares.
+
+## Deploying a new image
+
+Not with Terraform. The container's `image` and `env` sit under
+`ignore_changes`, because `make deploy` owns the running revision — so a plan
+against a live deployment reports no change even when the running image has
+moved on. Don't read `image_tag`'s default as the deployed version.
+
+```bash
+make deploy IMAGE_TAG=v0.2.0   # rolls both the app and the digest job
+```
+
+The tag must be immutable. Container Apps creates a revision only when the
+template changes, so re-pushing `latest` would deploy nothing and report
+success — there is a variable validation and a Makefile guard against it.
+
+[platform]: https://github.com/jay-withers/azure-container-apps
+[bug]: https://github.com/hashicorp/terraform-provider-azurerm/issues/27362
 
 <!-- BEGIN_TF_DOCS -->
 ## Requirements
@@ -6,41 +84,70 @@
 | Name | Version |
 | ---- | ------- |
 | <a name="requirement_terraform"></a> [terraform](#requirement\_terraform) | >= 1.6 |
-| <a name="requirement_azurerm"></a> [azurerm](#requirement\_azurerm) | ~> 4.0 |
+| <a name="requirement_azurerm"></a> [azurerm](#requirement\_azurerm) | ~> 5.0 |
 | <a name="requirement_random"></a> [random](#requirement\_random) | >= 3.3.2 |
 
 ## Providers
 
 | Name | Version |
 | ---- | ------- |
-| <a name="provider_azurerm"></a> [azurerm](#provider\_azurerm) | 4.81.0 |
+| <a name="provider_azurerm"></a> [azurerm](#provider\_azurerm) | 5.6.0 |
 
 ## Modules
 
 | Name | Source | Version |
 | ---- | ------ | ------- |
 | <a name="module_naming"></a> [naming](#module\_naming) | Azure/naming/azurerm | ~> 0.4 |
+| <a name="module_naming_digest"></a> [naming\_digest](#module\_naming\_digest) | Azure/naming/azurerm | ~> 0.4 |
 
 ## Resources
 
 | Name | Type |
 | ---- | ---- |
+| [azurerm_container_app.this](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/container_app) | resource |
+| [azurerm_container_app_custom_domain.this](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/container_app_custom_domain) | resource |
+| [azurerm_container_app_environment_managed_certificate.this](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/container_app_environment_managed_certificate) | resource |
+| [azurerm_container_app_job.digest](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/container_app_job) | resource |
+| [azurerm_key_vault.this](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/key_vault) | resource |
 | [azurerm_resource_group.this](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/resource_group) | resource |
+| [azurerm_role_assignment.deployer_secrets_officer](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/role_assignment) | resource |
+| [azurerm_role_assignment.deployer_state_contributor](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/role_assignment) | resource |
+| [azurerm_role_assignment.identity_secrets_user](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/role_assignment) | resource |
+| [azurerm_role_assignment.identity_state_contributor](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/role_assignment) | resource |
+| [azurerm_storage_account.state](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/storage_account) | resource |
+| [azurerm_storage_container.state](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/storage_container) | resource |
+| [azurerm_user_assigned_identity.this](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/user_assigned_identity) | resource |
+| [azurerm_application_insights.platform](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/data-sources/application_insights) | data source |
+| [azurerm_client_config.current](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/data-sources/client_config) | data source |
+| [azurerm_container_app_environment.platform](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/data-sources/container_app_environment) | data source |
 
 ## Inputs
 
 | Name | Description | Type | Default | Required |
 | ---- | ----------- | ---- | ------- | :------: |
-| <a name="input_environment"></a> [environment](#input\_environment) | Deployment environment. Drives environment-specific behaviour (naming, sizing, etc.) as the module grows. | `string` | n/a | yes |
-| <a name="input_location"></a> [location](#input\_location) | Azure region the resource group is created in. | `string` | `"westeurope"` | no |
-| <a name="input_tags"></a> [tags](#input\_tags) | Tags applied to all resources created by this module, merged with (and taking precedence over) the module's default tags (`environment`, `managed-by`). | `map(string)` | `{}` | no |
+| <a name="input_custom_domain_name"></a> [custom\_domain\_name](#input\_custom\_domain\_name) | Hostname to bind to the app with a free Azure-managed certificate, e.g. `finances.jaywithers.uk`. Empty creates neither the certificate nor the binding; the default `*.azurecontainerapps.io` URL always works either way. The CNAME (to that default FQDN) and the `asuid.<label>` TXT record (holding `custom_domain_verification_id`) must already resolve before apply, because Azure validates both during issuance — `make dns` prints them. | `string` | `""` | no |
+| <a name="input_digest_cron_expression"></a> [digest\_cron\_expression](#input\_digest\_cron\_expression) | When the reminder digest runs, in **UTC** — Container Apps jobs have no timezone setting. The default is 08:00 UTC on the 1st of each month, which is 08:00 or 09:00 in the UK depending on the season. Monthly rather than quarterly because the renewal check is monthly; the wealth nudge is included only when the newest snapshot is stale. | `string` | `"0 8 1 * *"` | no |
+| <a name="input_environment"></a> [environment](#input\_environment) | Deployment environment. Drives resource naming, and selects which shared platform environment this project deploys onto. | `string` | n/a | yes |
+| <a name="input_image_registry"></a> [image\_registry](#input\_image\_registry) | Registry and repository prefix the image is pulled from. A public package on ghcr.io deliberately: a private one would need a `registry` block and a Key Vault-backed pull secret on the app, and there is no Azure Container Registry because ACR Basic is a flat monthly charge with no consumption tier. | `string` | `"ghcr.io/jay-withers/finances"` | no |
+| <a name="input_image_tag"></a> [image\_tag](#input\_image\_tag) | Image tag seeding the app's and the job's **first** revision only. Every deploy after that is `make deploy IMAGE_TAG=vX.Y.Z`, because the container's image and env sit under `ignore_changes` — so a plan against an existing deployment reports no change here even when the running image has moved on. Don't read a stale-looking default as the deployed version. | `string` | `"v0.0.1"` | no |
+| <a name="input_key_vault_administrator_object_ids"></a> [key\_vault\_administrator\_object\_ids](#input\_key\_vault\_administrator\_object\_ids) | Extra Entra object IDs granted Key Vault Secrets Officer and Storage Blob Data Contributor. Whoever runs `terraform apply` is always included, so this is only for a second person or a second machine. | `list(string)` | `[]` | no |
+| <a name="input_platform_app_insights_name"></a> [platform\_app\_insights\_name](#input\_platform\_app\_insights\_name) | Name of the shared Application Insights instance the app reports telemetry to. | `string` | `"appi-platform-dev"` | no |
+| <a name="input_platform_environment_name"></a> [platform\_environment\_name](#input\_platform\_environment\_name) | Name of the shared Container Apps environment this app runs on. | `string` | `"cae-platform-dev"` | no |
+| <a name="input_platform_resource_group_name"></a> [platform\_resource\_group\_name](#input\_platform\_resource\_group\_name) | Resource group holding the shared Container Apps environment. | `string` | `"rg-platform-dev"` | no |
+| <a name="input_project_name"></a> [project\_name](#input\_project\_name) | Short name for this project, used by the naming module for every resource. | `string` | `"finances"` | no |
+| <a name="input_tags"></a> [tags](#input\_tags) | Tags merged over the defaults in locals.tf. | `map(string)` | `{}` | no |
 
 ## Outputs
 
 | Name | Description |
 | ---- | ----------- |
-| <a name="output_environment"></a> [environment](#output\_environment) | The deployment environment passed to the module. |
-| <a name="output_resource_group_id"></a> [resource\_group\_id](#output\_resource\_group\_id) | ID of the created resource group. |
-| <a name="output_resource_group_location"></a> [resource\_group\_location](#output\_resource\_group\_location) | Location of the created resource group. |
-| <a name="output_resource_group_name"></a> [resource\_group\_name](#output\_resource\_group\_name) | Name of the created resource group. |
+| <a name="output_app_url"></a> [app\_url](#output\_app\_url) | The application's stable HTTPS URL. Bookmark this one; it survives deploys. |
+| <a name="output_container_app_name"></a> [container\_app\_name](#output\_container\_app\_name) | Name of the container app, which `make deploy` passes to `az containerapp update`. |
+| <a name="output_custom_domain_url"></a> [custom\_domain\_url](#output\_custom\_domain\_url) | The bound custom domain, if var.custom\_domain\_name is set. Empty otherwise. |
+| <a name="output_custom_domain_verification_id"></a> [custom\_domain\_verification\_id](#output\_custom\_domain\_verification\_id) | Domain verification ID, published as the `asuid.<label>` TXT record before apply. |
+| <a name="output_digest_job_name"></a> [digest\_job\_name](#output\_digest\_job\_name) | Name of the reminder digest job, for `make deploy` and for starting a run by hand with `az containerapp job start`. |
+| <a name="output_identity_client_id"></a> [identity\_client\_id](#output\_identity\_client\_id) | Client ID of the workload identity, which both workloads receive as `AZURE_CLIENT_ID` and use to reach Key Vault and the document. |
+| <a name="output_key_vault_name"></a> [key\_vault\_name](#output\_key\_vault\_name) | Key Vault name, for populating APP-PASSCODE, RESEND-API-KEY and DIGEST-EMAIL-TO with `az keyvault secret set` — see `make secrets`. |
+| <a name="output_resource_group_name"></a> [resource\_group\_name](#output\_resource\_group\_name) | This project's resource group. |
+| <a name="output_state_container_url"></a> [state\_container\_url](#output\_state\_container\_url) | Blob container holding the finances document, for `make deploy` and for `finances import` run locally. |
 <!-- END_TF_DOCS -->

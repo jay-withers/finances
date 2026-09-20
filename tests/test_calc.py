@@ -1,0 +1,177 @@
+"""The derived values that replace the spreadsheet's formulas."""
+
+from __future__ import annotations
+
+from datetime import date
+
+from finances import calc
+from finances.model import (
+    Document,
+    PaydayRun,
+    Pot,
+    PotEntry,
+    Renewal,
+    WealthAccount,
+    WealthSnapshot,
+)
+
+
+def test_pot_balance_is_the_sum_of_its_ledger(doc: Document):
+    car = next(p for p in doc.pots if p.name == "Car")
+    # 20000 in, 30000 out.
+    assert calc.pot_balance(doc, car.id) == -10_000
+
+
+def test_pot_balances_covers_every_pot(doc: Document):
+    balances = calc.pot_balances(doc)
+    assert set(balances) == {p.id for p in doc.pots}
+    assert sum(balances.values()) == calc.pots_total(doc)
+
+
+def test_payday_pots_excludes_the_general_pot(doc: Document):
+    """The spreadsheet did the same, by summing B2:B9 rather than B2:B10."""
+    names = [p.name for p in calc.payday_pots(doc)]
+    assert names == ["Holidays", "Car"]
+    assert calc.pots_monthly_total(doc) == 50_000
+
+
+def test_archived_pots_are_excluded(doc: Document):
+    doc.pots[0].archived = True
+    assert "Holidays" not in [p.name for p in calc.payday_pots(doc)]
+    assert calc.pots_monthly_total(doc) == 5_000
+
+
+def test_summary_excludes_inactive_lines(doc: Document):
+    totals = calc.summary(doc)
+    assert totals.income == 500_000  # the 50000 "Cancelled" line is inactive
+    assert totals.outgoings == 100_000  # the 5000 "Old thing" line is inactive
+
+
+def test_summary_spare_ignores_the_remainder_transfer(doc: Document):
+    """Counting the remainder would subtract the same money twice.
+
+    Transfers are: the pot-tracking one (50000), a fixed 110000, and the
+    remainder. Spare is what the remainder step will actually move.
+    """
+    totals = calc.summary(doc)
+    assert totals.savings_and_spends == 160_000
+    assert totals.spare == 500_000 - 100_000 - 160_000
+
+
+def test_pot_tracking_transfer_follows_the_pots(doc: Document):
+    """The drift the spreadsheet had: two copies of the same number.
+
+    Changing a pot's monthly amount must move the transfer with it, with
+    nothing else edited.
+    """
+    tracking = next(t for t in doc.transfers if t.tracks_pots)
+    assert calc.transfer_amount(doc, tracking.id) == 50_000
+
+    doc.pots[0].monthly_pence = 60_000
+    assert calc.transfer_amount(doc, tracking.id) == 65_000
+    assert calc.summary(doc).savings_and_spends == 175_000
+
+
+def test_days_until_and_rolling(doc: Document, today: date):
+    mot = next(r for r in doc.renewals if r.kind == "Car MOT")
+    sim = next(r for r in doc.renewals if r.kind == "SIM")
+    assert calc.days_until(mot, today) == 47
+    # A rolling contract has no expiry, so it is never due and never nags.
+    assert calc.days_until(sim, today) is None
+    assert calc.is_due(sim, today) is False
+
+
+def test_is_due_respects_per_renewal_notice(doc: Document, today: date):
+    mot = next(r for r in doc.renewals if r.kind == "Car MOT")
+    assert calc.is_due(mot, today) is True  # 47 days, inside the default 60
+
+    mot.notice_days = 30
+    assert calc.is_due(mot, today) is False
+
+
+def test_renewals_sort_with_rolling_last(doc: Document, today: date):
+    order = [r.kind for r in calc.renewals_by_date(doc, today)]
+    assert order == ["Car MOT", "Mortgage", "SIM"]
+
+
+def test_wealth_totals_skip_accounts_with_no_figure(doc: Document):
+    """Two accounts, one of which has no projection — as in the spreadsheet."""
+    assert calc.wealth_total(doc) == 2_367_900 + 5_255_600
+    assert calc.projection_total(doc) == 25_500_000
+
+
+def test_wealth_total_uses_only_the_newest_snapshot(doc: Document):
+    pension = doc.wealth_accounts[0]
+    before = calc.wealth_total(doc)
+    doc.wealth_snapshots.append(
+        WealthSnapshot(account_id=pension.id, as_of=date(2026, 9, 1), current_pence=3_000_000)
+    )
+    # Replaces the April figure rather than adding to it.
+    assert calc.wealth_total(doc) == before - 2_367_900 + 3_000_000
+
+
+def test_attention_flags_payday_renewal_and_stale_wealth(doc: Document, today: date):
+    state = calc.attention(doc, today)
+    titles = [item.title for item in state.items]
+
+    assert any("Payday not yet run" in t for t in titles)
+    assert "Car MOT" in titles
+    assert any("out of date" in t for t in titles)
+    # The overdrawn Car pot.
+    assert "Car is overdrawn" in titles
+    # The mortgage, still 253 days out.
+    assert "Mortgage" not in titles
+    assert state.quiet_renewals == 2
+
+
+def test_attention_is_quiet_when_nothing_is_due(today: date):
+    """An all-clear must be reachable, or the panel is decoration."""
+    document = Document(
+        pots=[Pot(name="Holidays", monthly_pence=1000)],
+        renewals=[Renewal(kind="Far off", expires_on=date(2029, 1, 1))],
+    )
+    document.payday_runs.append(PaydayRun(month=calc.current_month(today), run_on=today))
+    state = calc.attention(document, today)
+    assert state.items == []
+    assert state.quiet_renewals == 1
+
+
+def test_payday_urgency_depends_on_how_late_it_is(doc: Document):
+    """Red from the 16th, not the 1st: a panel that is always red is ignored."""
+    early = calc.attention(doc, date(2026, 9, 3))
+    late = calc.attention(doc, date(2026, 9, 25))
+    assert next(i for i in early.items if "Payday" in i.title).urgent is False
+    assert next(i for i in late.items if "Payday" in i.title).urgent is True
+
+
+def test_attention_ignores_archived_overdrawn_pots(doc: Document, today: date):
+    car = next(p for p in doc.pots if p.name == "Car")
+    car.archived = True
+    titles = [i.title for i in calc.attention(doc, today).items]
+    assert "Car is overdrawn" not in titles
+
+
+def test_no_payday_nag_when_there_are_no_pots(today: date):
+    document = Document()
+    assert calc.attention(document, today).items == []
+
+
+def test_wealth_account_with_no_snapshot_is_not_stale(today: date):
+    """Never valued is a different problem from out of date."""
+    document = Document(wealth_accounts=[WealthAccount(company="New")])
+    assert calc.oldest_wealth_snapshot(document) is None
+    assert calc.attention(document, today).items == []
+
+
+def test_pot_entries_are_newest_first(doc: Document):
+    car = next(p for p in doc.pots if p.name == "Car")
+    entries = doc.entries_for(car.id)
+    assert [e.on for e in entries] == [date(2026, 9, 2), date(2026, 8, 31)]
+
+
+def test_entries_for_ignores_other_pots(doc: Document):
+    holidays = next(p for p in doc.pots if p.name == "Holidays")
+    doc.pot_entries.append(PotEntry(pot_id="not-a-pot", on=date(2026, 9, 1), amount_pence=999_999))
+    assert len(doc.entries_for(holidays.id)) == 1
+    # And a stray entry cannot inflate a total.
+    assert calc.pots_total(doc) == 127_500 - 10_000 + 630_000
