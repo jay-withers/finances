@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block title %}{{ pot.name }} &middot; finances{% endblock %}
+{% block subtitle %}<a href="/pots">&larr; pots</a>{% endblock %}
+{% block body %}
+
+<div class="figures">
+  <div class="figure">
+    <div class="label">{{ pot.name }}</div>
+    <div class="value {{ 'over' if balance < 0 }}">{{ balance | money }}</div>
+  </div>
+  <div class="figure">
+    <div class="label">Monthly</div>
+    <div class="value">
+      {% if pot.counts_toward_payday %}{{ pot.monthly_pence | money }}{% else %}&mdash;{% endif %}
+    </div>
+  </div>
+</div>
+
+<h2>Record</h2>
+<form method="post" action="/pots/{{ pot.id }}/entry" class="card">
+  <div class="row">
+    <div class="field">
+      <label for="amount">Amount</label>
+      <input type="number" id="amount" name="amount" step="0.01" inputmode="decimal" required>
+    </div>
+    <div class="field">
+      <label for="kind">Direction</label>
+      {# The handler takes the absolute value and applies the sign from this,
+         so typing "-100" into a spend does not cancel out into a deposit. #}
+      <select id="kind" name="kind">
+        <option value="spend">Spent from the pot</option>
+        <option value="deposit">Added to the pot</option>
+      </select>
+    </div>
+  </div>
+  <div class="row">
+    <div class="field">
+      <label for="on">Date</label>
+      <input type="date" id="on" name="on" value="{{ today.isoformat() }}">
+    </div>
+    <div class="field">
+      <label for="note">What for</label>
+      <input type="text" id="note" name="note" placeholder="optional">
+    </div>
+  </div>
+  <button type="submit">Record</button>
+</form>
+
+<h2>Ledger</h2>
+<table>
+  <tbody>
+  {% for entry in entries %}
+    <tr>
+      <td class="shrink muted">{{ entry.on.strftime('%-d %b %y') }}</td>
+      <td>
+        {{ entry.note or entry.kind }}
+        {% if entry.kind == 'opening' %}<br><span class="muted">imported</span>{% endif %}
+      </td>
+      <td class="num {{ 'neg' if entry.amount_pence < 0 }}">
+        {{ entry.amount_pence | money }}
+      </td>
+      <td class="shrink">
+        <form method="post" action="/pots/{{ pot.id }}/entry/{{ entry.id }}/delete" class="inline-form">
+          <button class="tiny" type="submit">delete</button>
+        </form>
+      </td>
+    </tr>
+  {% else %}
+    <tr><td class="muted">Nothing recorded yet.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+<details>
+  <summary>Edit this pot</summary>
+  <form method="post" action="/pots/{{ pot.id }}/edit" class="card">
+    <div class="field">
+      <label for="name">Name</label>
+      <input type="text" id="name" name="name" value="{{ pot.name }}" required>
+    </div>
+    <div class="field">
+      <label for="monthly">Monthly amount</label>
+      <input type="number" id="monthly" name="monthly" step="0.01" inputmode="decimal"
+             value="{{ pot.monthly_pence | pounds }}">
+    </div>
+    <div class="field">
+      <label><input type="checkbox" name="counts" value="1" style="width:auto"
+             {{ 'checked' if pot.counts_toward_payday }}> Top up on payday</label>
+    </div>
+    <div class="field">
+      <label><input type="checkbox" name="archived" value="1" style="width:auto"
+             {{ 'checked' if pot.archived }}> Archived</label>
+    </div>
+    <button type="submit">Save</button>
+  </form>
+</details>
+{% endblock %}

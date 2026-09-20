@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% block subtitle %}{{ total | money }}{% endblock %}
+{% block body %}
+
+<div class="figures">
+  <div class="figure">
+    <div class="label">Current</div><div class="value">{{ total | money }}</div>
+  </div>
+  <div class="figure">
+    <div class="label">Yearly projection</div><div class="value">{{ projection | money }}</div>
+  </div>
+</div>
+
+{% for account, latest, age, history in accounts %}
+  <h2>{{ account.company }}</h2>
+  <div class="card">
+    <table>
+      <tbody>
+      <tr>
+        <td>Current</td>
+        <td class="num">{{ latest.current_pence | money if latest and latest.current_pence is not none else '—' }}</td>
+      </tr>
+      <tr>
+        <td>Yearly projection</td>
+        <td class="num">{{ latest.yearly_projection_pence | money if latest and latest.yearly_projection_pence is not none else '—' }}</td>
+      </tr>
+      {% if account.planned_pot_pence is not none %}
+      <tr><td>Planned pot</td><td class="num">{{ account.planned_pot_pence | money }}</td></tr>
+      {% endif %}
+      {% if latest and latest.year_growth is not none %}
+      <tr><td>Year growth</td><td class="num">{{ '%.2f' | format(latest.year_growth * 100) }}%</td></tr>
+      {% endif %}
+      <tr>
+        <td>As of</td>
+        <td class="num">
+          {% if latest %}
+            {{ latest.as_of.strftime('%-d %b %y') }}<br>
+            {# The whole point of the quarterly ritual: say out loud how old
+               this number is, which the spreadsheet only implied. #}
+            <span class="{{ 'neg' if age > stale_after else 'muted' }}">{{ age }} days ago</span>
+          {% else %}<span class="muted">never valued</span>{% endif %}
+        </td>
+      </tr>
+      </tbody>
+    </table>
+
+    <details>
+      <summary>Record a new valuation</summary>
+      <form method="post" action="/wealth/{{ account.id }}/snapshot">
+        <div class="row">
+          <div class="field">
+            <label>As of</label>
+            <input type="date" name="as_of" value="{{ today.isoformat() }}">
+          </div>
+          <div class="field">
+            <label>Current</label>
+            <input type="number" name="current" step="0.01" inputmode="decimal"
+                   value="{{ latest.current_pence | pounds if latest and latest.current_pence is not none else '' }}">
+          </div>
+        </div>
+        <div class="row">
+          <div class="field">
+            <label>Yearly projection</label>
+            <input type="number" name="projection" step="0.01" inputmode="decimal"
+                   value="{{ latest.yearly_projection_pence | pounds if latest and latest.yearly_projection_pence is not none else '' }}">
+          </div>
+          <div class="field">
+            <label>Year growth (0.29 = 29%)</label>
+            <input type="number" name="growth" step="0.0001"
+                   value="{{ latest.year_growth if latest and latest.year_growth is not none else '' }}">
+          </div>
+        </div>
+        <button type="submit">Record</button>
+      </form>
+    </details>
+
+    {% if history | length > 1 %}
+    <details>
+      <summary>{{ history | length }} valuations</summary>
+      <table><tbody>
+      {% for snapshot in history %}
+        <tr>
+          <td class="shrink muted">{{ snapshot.as_of.strftime('%-d %b %y') }}</td>
+          <td class="num">{{ snapshot.current_pence | money if snapshot.current_pence is not none else '—' }}</td>
+        </tr>
+      {% endfor %}
+      </tbody></table>
+    </details>
+    {% endif %}
+  </div>
+{% else %}
+  <p class="muted">No accounts yet.</p>
+{% endfor %}
+
+<details>
+  <summary>Add an account</summary>
+  <form method="post" action="/wealth/accounts/add" class="card">
+    <div class="field">
+      <label for="company">Company</label>
+      <input type="text" id="company" name="company" required>
+    </div>
+    <div class="field">
+      <label for="planned">Planned pot</label>
+      <input type="number" id="planned" name="planned" step="0.01" inputmode="decimal">
+    </div>
+    <div class="field">
+      <label for="notes">Notes</label>
+      <input type="text" id="notes" name="notes">
+    </div>
+    <button type="submit">Add</button>
+  </form>
+</details>
+{% endblock %}

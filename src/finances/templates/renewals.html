@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% block subtitle %}{{ doc.renewals | length }} tracked{% endblock %}
+{% block body %}
+
+<table>
+  <thead>
+    <tr><th>What</th><th>Company</th><th class="num">When</th></tr>
+  </thead>
+  <tbody>
+  {% for renewal, days, due in renewals %}
+    <tr class="{{ '' if due else 'dim' }}">
+      <td>{{ renewal.kind }}
+        {% if renewal.comment %}<br><span class="muted">{{ renewal.comment }}</span>{% endif %}
+      </td>
+      <td class="muted">{{ renewal.company or '—' }}</td>
+      <td class="num">
+        {% if renewal.rolling %}
+          {# The two Lebara SIMs. The spreadsheet gave these a fake 2001 date
+             because it had nowhere to say "monthly, no end date". #}
+          <span class="muted">rolling</span>
+        {% elif days is none %}
+          <span class="muted">no date</span>
+        {% else %}
+          {{ renewal.expires_on.strftime('%-d %b %y') }}<br>
+          <span class="{{ 'neg' if days <= 14 else 'muted' }}">
+            {% if days < 0 %}{{ -days }}d ago{% elif days == 0 %}today{% else %}in {{ days }}d{% endif %}
+          </span>
+        {% endif %}
+      </td>
+    </tr>
+  {% else %}
+    <tr><td colspan="3" class="muted">Nothing tracked yet.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+<details>
+  <summary>Add a renewal</summary>
+  <form method="post" action="/renewals/add" class="card">
+    <div class="row">
+      <div class="field">
+        <label for="kind">What</label>
+        <input type="text" id="kind" name="kind" required>
+      </div>
+      <div class="field">
+        <label for="company">Company</label>
+        <input type="text" id="company" name="company">
+      </div>
+    </div>
+    <div class="field">
+      <label for="expires_on">Expires</label>
+      <input type="date" id="expires_on" name="expires_on">
+    </div>
+    <div class="field">
+      <label><input type="checkbox" name="rolling" value="1" style="width:auto">
+        Rolling — no end date, never chase it</label>
+    </div>
+    <div class="field">
+      <label for="comment">Note</label>
+      <input type="text" id="comment" name="comment">
+    </div>
+    <button type="submit">Add</button>
+  </form>
+</details>
+
+<details>
+  <summary>Edit</summary>
+  {% for renewal, days, due in renewals %}
+    <form method="post" action="/renewals/{{ renewal.id }}" class="card">
+      <div class="row">
+        <div class="field">
+          <label>What</label>
+          <input type="text" name="kind" value="{{ renewal.kind }}" required>
+        </div>
+        <div class="field">
+          <label>Company</label>
+          <input type="text" name="company" value="{{ renewal.company }}">
+        </div>
+      </div>
+      <div class="row">
+        <div class="field">
+          <label>Expires</label>
+          <input type="date" name="expires_on"
+                 value="{{ renewal.expires_on.isoformat() if renewal.expires_on else '' }}">
+        </div>
+        <div class="field">
+          <label>Warn me this many days ahead</label>
+          <input type="number" name="notice_days" value="{{ renewal.notice_days or '' }}"
+                 placeholder="default">
+        </div>
+      </div>
+      <div class="field">
+        <label><input type="checkbox" name="rolling" value="1" style="width:auto"
+               {{ 'checked' if renewal.rolling }}> Rolling</label>
+      </div>
+      <div class="field">
+        <label>Note</label>
+        <input type="text" name="comment" value="{{ renewal.comment }}">
+      </div>
+      <div class="row">
+        <button type="submit">Save</button>
+      </div>
+    </form>
+    <form method="post" action="/renewals/{{ renewal.id }}/delete">
+      <button class="ghost" type="submit">Delete {{ renewal.kind }}</button>
+    </form>
+  {% endfor %}
+</details>
+{% endblock %}

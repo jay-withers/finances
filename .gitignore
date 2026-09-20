@@ -9,9 +9,9 @@
 crash.log
 crash.*.log
 
-# *.tfvars files are committed intentionally (dev/stg/prd environment inputs —
-# see terraform/examples/basic/*.tfvars). Do not put secrets in them; use Azure
-# Key Vault, GitHub Actions secrets, or ARM_* environment variables instead.
+# *.tfvars files are committed intentionally (the dev environment's inputs —
+# see terraform/environments/). Do not put secrets in them; use Azure Key
+# Vault, GitHub Actions secrets, or ARM_* environment variables instead.
 # gitleaks (pre-commit and CI) scans every commit as a backstop.
 
 # CLI configuration and override files
@@ -22,12 +22,38 @@ override.tf.json
 *_override.tf
 *_override.tf.json
 
-# Provider lock file — not committed for a reusable module (consumers generate
-# their own); commit it instead if you repurpose this repo as a root config.
-.terraform.lock.hcl
+# The provider lock file IS committed: this is a root configuration, not a
+# reusable module, so the versions it resolves are the ones that get applied.
+# Regenerate it for every platform that runs terraform, not just this host:
+#   terraform providers lock \
+#     -platform=linux_amd64 -platform=linux_arm64 -platform=darwin_arm64
+# A lock holding arm64 hashes only fails `pre-commit / Pre-commit` in CI on
+# every pull request, because CI runs amd64 and `init` adds the missing hash.
 
 # Saved plan output
 *.tfplan
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+dist/
+*.egg-info/
+
+# Local secrets and local state. `make run` with no STATE_CONTAINER_URL writes
+# the document here instead of to the blob.
+.env
+.finances.json
+
+# The migration source: the real household spreadsheet `make import` reads.
+# Same real data .finances.json above is excluded for — this repo is public.
+Finances_3.xlsx
 
 # macOS finder metadata
 .DS_Store

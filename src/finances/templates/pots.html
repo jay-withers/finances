@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block subtitle %}{{ pots_total | money }} across {{ doc.pots | length }}{% endblock %}
+{% block body %}
+
+<table>
+  <thead>
+    <tr><th>Pot</th><th class="num">Monthly</th><th class="num">Balance</th></tr>
+  </thead>
+  <tbody>
+  {% for pot in doc.pots if not pot.archived %}
+    <tr>
+      <td><a href="/pots/{{ pot.id }}" style="text-decoration:none">{{ pot.name }}</a></td>
+      <td class="num muted">
+        {% if pot.counts_toward_payday %}{{ pot.monthly_pence | money }}{% else %}&mdash;{% endif %}
+      </td>
+      <td class="num {{ 'neg' if balances[pot.id] < 0 }}">{{ balances[pot.id] | money }}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="3" class="muted">No pots yet.</td></tr>
+  {% endfor %}
+  </tbody>
+  <tfoot>
+    <tr><th>Total</th><th class="num">{{ monthly_total | money }}</th><th class="num">{{ pots_total | money }}</th></tr>
+  </tfoot>
+</table>
+
+{% set archived = doc.pots | selectattr('archived') | list %}
+{% if archived %}
+  <details>
+    <summary>{{ archived | length }} archived</summary>
+    <table><tbody>
+    {% for pot in archived %}
+      <tr class="dim">
+        <td><a href="/pots/{{ pot.id }}" style="text-decoration:none">{{ pot.name }}</a></td>
+        <td class="num">{{ balances[pot.id] | money }}</td>
+      </tr>
+    {% endfor %}
+    </tbody></table>
+  </details>
+{% endif %}
+
+<details>
+  <summary>Add a pot</summary>
+  <form method="post" action="/pots/add" class="card">
+    <div class="field">
+      <label for="name">Name</label>
+      <input type="text" id="name" name="name" required>
+    </div>
+    <div class="field">
+      <label for="monthly">Monthly amount</label>
+      {# Blank or zero means the pot is not topped up on payday — that is how
+         the general savings pot works. #}
+      <input type="number" id="monthly" name="monthly" step="0.01" inputmode="decimal"
+             placeholder="0 for a pot that is not topped up monthly">
+    </div>
+    <button type="submit">Add</button>
+  </form>
+</details>
+{% endblock %}

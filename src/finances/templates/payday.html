@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block subtitle %}{{ today.strftime('%B %Y') }}{% endblock %}
+{% block body %}
+
+{% if existing %}
+  {# Re-running is how a mistake gets corrected, so it is allowed — but it has
+     to be obvious that it replaces rather than adds, or the balances double. #}
+  <div class="item urgent">
+    <span class="what">Payday already run for {{ today.strftime('%B') }}</span><br>
+    <span class="why">
+      Recorded {{ existing.run_on.strftime('%-d %b') }}.
+      Submitting again replaces those {{ existing.entry_ids | length }} entries rather than adding to them.
+    </span>
+  </div>
+{% endif %}
+
+<form method="post" action="/payday/run">
+  <div class="card">
+    <div class="field">
+      <label for="on">Date</label>
+      <input type="date" id="on" name="on" value="{{ today.isoformat() }}">
+    </div>
+    <table>
+      <thead>
+        <tr><th>Pot</th><th class="num">Balance</th><th class="num" style="width:36%">Top up</th></tr>
+      </thead>
+      <tbody>
+      {% for pot in pots %}
+        <tr>
+          <td>{{ pot.name }}</td>
+          <td class="num muted">{{ balances[pot.id] | money }}</td>
+          <td class="num">
+            {# Pre-filled with the usual amount, editable for an unusual month,
+               and clearable to skip a pot entirely. #}
+            <input class="inline" type="number" step="0.01" inputmode="decimal"
+                   name="amount_{{ pot.id }}" value="{{ pot.monthly_pence | pounds }}">
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="3" class="muted">No pots to top up. Add one on the Pots page.</td></tr>
+      {% endfor %}
+      </tbody>
+      {% if pots %}
+      <tfoot>
+        <tr><th>Total</th><th></th><th class="num">{{ monthly_total | money }}</th></tr>
+      </tfoot>
+      {% endif %}
+    </table>
+    {% if pots %}<button type="submit">Record payday</button>{% endif %}
+  </div>
+</form>
+
+<h2>Then move</h2>
+<div class="card">
+  <table>
+    <tbody>
+    {% for transfer, amount in transfers %}
+      <tr>
+        <td>
+          {{ transfer.label }}
+          {% if transfer.note %}<br><span class="muted">{{ transfer.note }}</span>{% endif %}
+          {% if transfer.tracks_pots %}<br><span class="muted">follows the pot contributions above</span>{% endif %}
+        </td>
+        <td class="num">
+          {% if amount is none %}
+            {# The last step is whatever is left, which is the Spare figure. #}
+            <span class="muted">remainder</span><br>{{ remainder | money }}
+          {% else %}{{ amount | money }}{% endif %}
+        </td>
+      </tr>
+    {% else %}
+      <tr><td class="muted">No transfers recorded. Add them on the Monthly page.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

@@ -1,14 +1,27 @@
 {
-  "name": "terraform",
+  "name": "finances",
   "image": "ghcr.io/jay-withers/dev-containers/terraform:v0.14.1@sha256:69277c79f3b0c1025e2d29247e283930a12d35a6488548c35bda9d654eae689e",
   "mounts": [
-    "source=${localEnv:HOME}/Git,target=/Users/jay/Git,type=bind"
+    "source=${localEnv:HOME}/Git,target=/Users/jay/Git,type=bind",
+    // hadolint runs as a container, so the pre-commit hook needs the daemon.
+    "source=/var/run/docker.sock,target=/var/run/docker.sock,type=bind"
   ],
+  // What `make run` binds. Without this the server starts and the browser has
+  // nothing to connect to.
+  "forwardPorts": [8000],
+  "portsAttributes": {
+    "8000": {
+      "label": "finances",
+      "onAutoForward": "notify"
+    }
+  },
   "customizations": {
     "vscode": {
       "extensions": [
         "anthropic.claude-code",
         "hashicorp.terraform",
+        "ms-python.python",
+        "charliermarsh.ruff",
         "redhat.vscode-yaml",
         "github.vscode-github-actions",
         "github.vscode-pull-request-github",
@@ -23,10 +36,18 @@
         },
         "[terraform-vars]": {
           "editor.defaultFormatter": "hashicorp.terraform"
-        }
+        },
+        "[python]": {
+          "editor.defaultFormatter": "charliermarsh.ruff"
+        },
+        "python.defaultInterpreterPath": "${containerWorkspaceFolder}/.venv/bin/python"
       }
     }
   },
   "remoteUser": "vscode",
-  "postCreateCommand": "make install"
+  // Installs the pre-commit hooks and syncs the Python environment. Re-run it
+  // by hand after a rebuild if uv is missing: it installs into ~/.local/bin,
+  // which is the container's writable layer and does not survive one.
+  "postCreateCommand": "make install",
+  "postStartCommand": "sudo /usr/local/bin/docker-socket-setup"
 }

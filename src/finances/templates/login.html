@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}finances{% endblock %}
+{# No nav: there is nowhere to go until the passcode is in. #}
+{% block nav %}{% endblock %}
+{% block body %}
+<form method="post" action="/login" class="card">
+  <div class="field">
+    <label for="passcode">Passcode</label>
+    {# autofocus so the keyboard is already up on a phone. #}
+    <input type="password" id="passcode" name="passcode" autofocus
+           autocomplete="current-password" inputmode="text">
+  </div>
+  {% if error %}<p class="muted" style="color:var(--bad)">{{ error }}</p>{% endif %}
+  <button type="submit">Open</button>
+</form>
+{% endblock %}
