@@ -1,0 +1,29 @@
+name: ci-terraform
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  # Credential-free validation via the shared workflow: the module and its
+  # example both init and validate, and the module's terraform tests run with a
+  # mocked azurerm provider, so this is green on a fresh template with no Azure
+  # auth configured. The path filter and the always-reporting gate job both
+  # live in there — mark "terraform / Terraform" as the required check in the
+  # ruleset, not the bare job id.
+  #
+  # There is no plan job: the template ships no credentials, and a plan of the
+  # example would need a real subscription. Downstream repos plan by hand.
+  terraform:
+    permissions:
+      contents: read
+      pull-requests: read
+    # TODO: re-pin to the released tag's SHA once jay-withers/workflows has cut
+    # a release containing the validate-only terraform.yml.
+    uses: jay-withers/workflows/.github/workflows/terraform.yml@a4133d77f379bc1f3cd69870a75542facf306567 # main
+    with:
+      directories: '["terraform", "terraform/examples/basic"]'
+      test-directories: '["terraform"]'

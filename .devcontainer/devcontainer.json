@@ -1,0 +1,32 @@
+{
+  "name": "terraform",
+  "image": "ghcr.io/jay-withers/dev-containers/terraform:v0.14.1@sha256:69277c79f3b0c1025e2d29247e283930a12d35a6488548c35bda9d654eae689e",
+  "mounts": [
+    "source=${localEnv:HOME}/Git,target=/Users/jay/Git,type=bind"
+  ],
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "anthropic.claude-code",
+        "hashicorp.terraform",
+        "redhat.vscode-yaml",
+        "github.vscode-github-actions",
+        "github.vscode-pull-request-github",
+        "eamodio.gitlens",
+        "mhutchie.git-graph",
+        "editorconfig.editorconfig"
+      ],
+      "settings": {
+        "editor.formatOnSave": true,
+        "[terraform]": {
+          "editor.defaultFormatter": "hashicorp.terraform"
+        },
+        "[terraform-vars]": {
+          "editor.defaultFormatter": "hashicorp.terraform"
+        }
+      }
+    }
+  },
+  "remoteUser": "vscode",
+  "postCreateCommand": "make install"
+}
