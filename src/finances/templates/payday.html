@@ -60,7 +60,6 @@
           <td>
             {{ transfer.label }}
             {% if transfer.note %}<br><span class="muted">{{ transfer.note }}</span>{% endif %}
-            {% if transfer.tracks_pots %}<br><span class="muted">follows the savings contributions above</span>{% endif %}
           </td>
           <td class="num" style="width:36%">
             {% if transfer.tracks_pots %}
@@ -70,7 +69,7 @@
               {{ amount | money }}<br><span class="muted">from savings</span>
             {% elif amount is none %}
               {# The last step is whatever is left, which is the Spare figure. #}
-              <span class="muted">remainder</span><br>{{ remainder | money }}
+              <span class="muted">Remainder</span>
             {% else %}
               <input class="inline" type="number" step="0.01" inputmode="decimal"
                      name="transfer_{{ transfer.id }}" value="{{ amount | pounds }}">
