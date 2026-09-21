@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
+
 import pytest
 
 from finances.money import format_money, format_pounds, parse_money
@@ -61,6 +63,7 @@ OUTGOINGS = [
         (450, 45000),
         (78.47, 7847),
         (0.1, 10),
+        (Decimal("38.97"), 3897),
     ],
 )
 def test_parse_money(raw, pence):

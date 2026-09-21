@@ -123,6 +123,29 @@ def test_send_posts_to_resend(monkeypatch):
     assert headers["Authorization"] == "Bearer key-123"
 
 
+def test_send_with_no_client_uses_httpx_directly(monkeypatch):
+    """The default path (no test double): `mailer.send` calls `httpx.post` itself."""
+    import httpx
+
+    monkeypatch.setenv("DIGEST_EMAIL_TO", "a@example.com")
+    monkeypatch.setenv("RESEND_API_KEY", "key-123")
+
+    calls = []
+
+    def fake_post(url, json=None, headers=None, timeout=None):
+        calls.append((url, json, headers, timeout))
+        return FakeResponse()
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+
+    result = mailer.send("subject", "<p>html</p>", "text")
+
+    assert result.status == "sent"
+    url, _payload, _headers, timeout = calls[0]
+    assert url == mailer.RESEND_ENDPOINT
+    assert timeout == mailer.TIMEOUT_SECONDS
+
+
 def test_a_failed_send_is_reported_not_raised(monkeypatch):
     """A mail provider's bad minute must not become a job-failure alert."""
     monkeypatch.setenv("DIGEST_EMAIL_TO", "a@example.com")
