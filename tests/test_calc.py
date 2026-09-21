@@ -72,6 +72,10 @@ def test_pot_tracking_transfer_follows_the_pots(doc: Document):
     assert calc.summary(doc).savings_and_spends == 175_000
 
 
+def test_transfer_amount_is_none_for_an_unknown_transfer(doc: Document):
+    assert calc.transfer_amount(doc, "does-not-exist") is None
+
+
 def test_days_until_and_rolling(doc: Document, today: date):
     mot = next(r for r in doc.renewals if r.kind == "Car MOT")
     sim = next(r for r in doc.renewals if r.kind == "SIM")
@@ -156,6 +160,17 @@ def test_attention_ignores_archived_overdrawn_pots(doc: Document, today: date):
     car.archived = True
     titles = [i.title for i in calc.attention(doc, today).items]
     assert "Car is overdrawn" not in titles
+
+
+def test_overdue_renewal_names_the_company(today: date):
+    """An expired renewal reads "<company> — expired N days ago", not just the date math."""
+    document = Document(
+        renewals=[
+            Renewal(kind="Boiler service", company="A Gas Co", expires_on=date(2026, 9, 15)),
+        ],
+    )
+    item = next(i for i in calc.attention(document, today).items if i.title == "Boiler service")
+    assert item.detail == "A Gas Co — expired 5 days ago"
 
 
 def test_no_payday_nag_when_there_are_no_pots(today: date):

@@ -91,6 +91,28 @@ def test_rerunning_with_a_different_amount_corrects_it(client, stored):
     assert calc.pot_balances(reload())[holidays.id] == 127_500 + 50_000
 
 
+def test_payday_zero_amount_is_treated_as_skipped(client, stored):
+    """Typed as "0" rather than left blank, a pot still sits this month out."""
+    holidays = pot_named(stored, "Holidays")
+    client.post("/payday/run", data={"on": "2026-09-25", f"amount_{holidays.id}": "0"})
+
+    document = reload()
+    assert calc.pot_balances(document)[holidays.id] == 127_500  # untouched
+    assert document.payday_run_for("2026-09").entry_ids == []
+
+
+def test_payday_transfer_amount_is_saved(client, stored):
+    fixed = next(t for t in stored.transfers if not t.tracks_pots and t.amount_pence is not None)
+    client.post("/payday/transfers", data={f"transfer_{fixed.id}": "1250"})
+    assert calc.transfer_amount(reload(), fixed.id) == 125_000
+
+
+def test_payday_transfer_can_be_deleted(client, stored):
+    fixed = next(t for t in stored.transfers if not t.tracks_pots and t.amount_pence is not None)
+    client.post(f"/payday/transfers/{fixed.id}/delete")
+    assert fixed.id not in [t.id for t in reload().transfers]
+
+
 def test_payday_clears_the_dashboard_nag(client, stored, monkeypatch):
     """The nag only starts on the 28th, so the dashboard's clock is pinned here
     rather than relying on whatever day the suite happens to run on."""
@@ -241,6 +263,12 @@ def test_add_and_delete_lines(client):
     assert "Water" not in [line.name for line in reload().outgoings]
 
 
+def test_add_an_income_line(client):
+    client.post("/monthly/add", data={"kind": "income", "name": "Bonus", "amount": "500"})
+    line = next(line for line in reload().income if line.name == "Bonus")
+    assert line.amount_pence == 50_000
+
+
 def test_add_a_remainder_transfer(client):
     client.post("/payday/transfers/add", data={"label": "Spare", "amount": "", "note": "left"})
     transfer = next(t for t in reload().transfers if t.label == "Spare")
@@ -343,7 +371,29 @@ def test_bad_growth_value_does_not_500(client, stored):
     assert reload().latest_snapshot(pension.id).year_growth is None
 
 
+def test_snapshot_for_an_unknown_account_is_a_noop(client, stored):
+    before = len(stored.wealth_snapshots)
+    response = client.post(
+        "/wealth/does-not-exist/snapshot", data={"as_of": "2026-09-20", "current": "100"}
+    )
+    assert response.status_code == 200
+    assert len(reload().wealth_snapshots) == before
+
+
 # --- general ------------------------------------------------------------------
+
+
+def test_a_conflicting_write_is_reported_as_409(client, stored, monkeypatch):
+    """The one retry in `store.update` already failed twice; the caller must know."""
+    from finances import store
+
+    def always_conflicts(_change):
+        raise store.ConflictError("the document changed while this change was being written")
+
+    monkeypatch.setattr(store, "update", always_conflicts)
+    response = client.post("/monthly/add", data={"kind": "outgoing", "name": "Water", "amount": ""})
+    assert response.status_code == 409
+    assert "changed" in response.json()["detail"]
 
 
 def test_a_blank_date_falls_back_to_today_rather_than_500ing(client, stored):

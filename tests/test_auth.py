@@ -22,6 +22,18 @@ def test_probes_are_outside_the_gate(anonymous):
     assert anonymous.get("/readyz").status_code == 200
 
 
+def test_readyz_reports_unavailable_when_storage_cannot_be_reached(anonymous, monkeypatch):
+    from finances import store
+
+    def broken_load():
+        raise RuntimeError("storage unreachable")
+
+    monkeypatch.setattr(store, "load", broken_load)
+    response = anonymous.get("/readyz")
+    assert response.status_code == 503
+    assert response.json()["storage"] is False
+
+
 def test_the_icon_is_outside_the_gate(anonymous):
     """The login page links it, so a gated icon would never render."""
     for path in ("/icon.svg", "/favicon.ico", "/manifest.json"):
@@ -102,6 +114,29 @@ def test_expired_session_is_rejected(monkeypatch):
 def test_malformed_tokens_are_rejected():
     for token in (None, "", "no-dot", "notanumber.abc", "."):
         assert deps.valid(token) is False
+
+
+def test_configured_cookie_secret_overrides_the_derived_key(monkeypatch):
+    """When COOKIE_SECRET is set, the signing key comes from it, not the passcode."""
+    from finances import settings as settings_module
+
+    token = deps.issue()
+
+    monkeypatch.setenv("COOKIE_SECRET", "a-fixed-secret")
+    settings_module.settings.cache_clear()
+    # Signed under the old (derived) key, so it no longer verifies.
+    assert deps.valid(token) is False
+
+    reissued = deps.issue()
+    assert deps.valid(reissued) is True
+
+
+def test_require_session_is_a_noop_when_the_passcode_is_disabled(monkeypatch):
+    from finances import settings as settings_module
+
+    monkeypatch.setenv("REQUIRE_PASSCODE", "false")
+    settings_module.settings.cache_clear()
+    assert deps.require_session(None) is None
 
 
 def test_rotating_the_passcode_invalidates_sessions(monkeypatch):
