@@ -145,9 +145,9 @@ class WealthSnapshot(BaseModel):
     as_of: date
     current_pence: int | None = None
     yearly_projection_pence: int | None = None
-    # A ratio, not a percentage: 0.2903 is 29.03%. Stored as given by the
-    # provider rather than recomputed, because it covers a period this app
-    # has no snapshots for.
+    # A ratio, not a percentage: 0.2903 is 29.03%. Computed by
+    # `calc.annualised_growth` against the account's previous snapshot when
+    # this one is recorded — see there for what makes it None.
     year_growth: float | None = None
 
 

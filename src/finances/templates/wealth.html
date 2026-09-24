@@ -11,9 +11,16 @@
   </div>
 </div>
 
-{% for account, latest, age, history in accounts %}
+{% for account, latest, age, history, sparkline in accounts %}
   <h2>{{ account.company }}</h2>
   <div class="card">
+    {% if sparkline %}
+    <svg viewBox="0 0 160 40" width="100%" height="40" preserveAspectRatio="none"
+         style="display:block;margin-bottom:10px">
+      <polyline points="{{ sparkline }}" fill="none" stroke="var(--accent)"
+                stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    {% endif %}
     <table>
       <tbody>
       <tr>
@@ -58,18 +65,13 @@
                    value="{{ latest.current_pence | pounds if latest and latest.current_pence is not none else '' }}">
           </div>
         </div>
-        <div class="row">
-          <div class="field">
-            <label>Yearly projection</label>
-            <input type="number" name="projection" step="0.01" inputmode="decimal"
-                   value="{{ latest.yearly_projection_pence | pounds if latest and latest.yearly_projection_pence is not none else '' }}">
-          </div>
-          <div class="field">
-            <label>Year growth (0.29 = 29%)</label>
-            <input type="number" name="growth" step="0.0001"
-                   value="{{ latest.year_growth if latest and latest.year_growth is not none else '' }}">
-          </div>
+        <div class="field">
+          <label>Yearly projection</label>
+          <input type="number" name="projection" step="0.01" inputmode="decimal"
+                 value="{{ latest.yearly_projection_pence | pounds if latest and latest.yearly_projection_pence is not none else '' }}">
         </div>
+        {# Year growth is no longer typed in — it is worked out from this
+           valuation against the previous one and just shown, above. #}
         <button type="submit">Record</button>
       </form>
     </details>

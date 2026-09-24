@@ -85,6 +85,29 @@ def _apply(change: Any) -> None:
         raise ConflictResponse(str(exc)) from exc
 
 
+def _sparkline_points(
+    snapshots: list[WealthSnapshot], width: float = 160, height: float = 40, pad: float = 4
+) -> str | None:
+    """SVG `<polyline>` points for a valuation trend, oldest to newest.
+
+    None with fewer than two valued readings: a single point has no trend to
+    draw, and `snapshots_for` includes rows recorded for the projection alone,
+    with no current figure at all.
+    """
+    valued = sorted((s for s in snapshots if s.current_pence is not None), key=lambda s: s.as_of)
+    if len(valued) < 2:
+        return None
+    values = [s.current_pence for s in valued]
+    low, high = min(values), max(values)
+    span = high - low or 1  # a flat line: centred rather than a division by zero
+    plot_height = height - 2 * pad
+    step = width / (len(values) - 1)
+    return " ".join(
+        f"{i * step:.1f},{height - pad - (v - low) / span * plot_height:.1f}"
+        for i, v in enumerate(values)
+    )
+
+
 # --- login --------------------------------------------------------------------
 
 
@@ -624,9 +647,10 @@ def wealth_page(request: Request) -> Any:
     today = _today()
     accounts = []
     for account in doc.wealth_accounts:
+        history = doc.snapshots_for(account.id)
         latest = doc.latest_snapshot(account.id)
         age = (today - latest.as_of).days if latest else None
-        accounts.append((account, latest, age, doc.snapshots_for(account.id)))
+        accounts.append((account, latest, age, history, _sparkline_points(history)))
     return templates.TemplateResponse(
         request,
         "wealth.html",
@@ -665,29 +689,34 @@ def wealth_snapshot_add(
     as_of: str = Form(default=""),
     current: str = Form(default=""),
     projection: str = Form(default=""),
-    growth: str = Form(default=""),
 ) -> Any:
     """Record this quarter's valuation.
 
     Appended, never overwritten: the whole reason for the quarterly ritual is
     the trend, and the spreadsheet threw away every previous reading.
+
+    Year growth is no longer typed in: it is worked out from this figure
+    against the account's previous snapshot, inside `change` so a retry after
+    a lost write compares against the same "previous" the first attempt did.
     """
     when = _date(as_of, _today())
 
     def change(doc: Document) -> Document:
         if doc.account(account_id) is None:
             return doc
-        try:
-            growth_value = float(growth) if growth.strip() else None
-        except ValueError:
-            growth_value = None
+        current_pence = parse_money(current) if current.strip() else None
+        previous = doc.latest_snapshot(account_id)
         doc.wealth_snapshots.append(
             WealthSnapshot(
                 account_id=account_id,
                 as_of=when,
-                current_pence=parse_money(current) if current.strip() else None,
+                current_pence=current_pence,
                 yearly_projection_pence=parse_money(projection) if projection.strip() else None,
-                year_growth=growth_value,
+                year_growth=(
+                    calc.annualised_growth(previous, current_pence, when)
+                    if current_pence is not None
+                    else None
+                ),
             )
         )
         return doc

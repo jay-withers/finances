@@ -205,6 +205,26 @@ def projection_total(doc: Document) -> int:
     return total
 
 
+def annualised_growth(
+    previous: WealthSnapshot | None, current_pence: int, as_of: date
+) -> float | None:
+    """The growth a new valuation implies, annualised so readings on any
+    schedule are comparable.
+
+    A ratio, not a percentage: 0.29 means 29%. None when there is nothing to
+    compare against, or the comparison would be meaningless — no previous
+    figure, a previous figure that was zero or less, or two valuations dated
+    the same day or earlier.
+    """
+    if previous is None or previous.current_pence is None or previous.current_pence <= 0:
+        return None
+    days = (as_of - previous.as_of).days
+    if days <= 0:
+        return None
+    years = days / 365.25
+    return (current_pence / previous.current_pence) ** (1 / years) - 1
+
+
 def oldest_wealth_snapshot(doc: Document) -> tuple[WealthAccount, WealthSnapshot] | None:
     """The account whose newest figure is the most out of date.
 

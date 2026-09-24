@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from datetime import date
 
+import pytest
+
 from finances import calc, store
 from finances.model import Document
 
@@ -324,11 +326,12 @@ def test_a_due_renewal_shows_on_the_dashboard(client):
 def test_recording_a_valuation_appends_rather_than_replaces(client, stored):
     """The trend is the point; the spreadsheet threw every previous reading away."""
     pension = stored.wealth_accounts[0]
+    previous = stored.latest_snapshot(pension.id)
     before = len(stored.snapshots_for(pension.id))
 
     client.post(
         f"/wealth/{pension.id}/snapshot",
-        data={"as_of": "2026-09-20", "current": "25000", "growth": "0.31"},
+        data={"as_of": "2026-09-20", "current": "25000"},
     )
 
     document = reload()
@@ -336,6 +339,9 @@ def test_recording_a_valuation_appends_rather_than_replaces(client, stored):
     latest = document.latest_snapshot(pension.id)
     assert latest.as_of == date(2026, 9, 20)
     assert latest.current_pence == 2_500_000
+    # Worked out from the previous snapshot rather than typed in.
+    expected = calc.annualised_growth(previous, 2_500_000, date(2026, 9, 20))
+    assert latest.year_growth == pytest.approx(expected)
 
 
 def test_a_fresh_valuation_clears_the_stale_warning(client):
@@ -346,6 +352,31 @@ def test_a_fresh_valuation_clears_the_stale_warning(client):
             data={"as_of": "2026-09-20", "current": "1000"},
         )
     assert "out of date" not in client.get("/").text
+
+
+def test_sparkline_points_handles_a_flat_valuation():
+    """Two equal readings must not divide by a zero span."""
+    from finances.api.routes import _sparkline_points
+    from finances.model import WealthSnapshot
+
+    flat = [
+        WealthSnapshot(account_id="a", as_of=date(2026, 1, 1), current_pence=1_000),
+        WealthSnapshot(account_id="a", as_of=date(2026, 4, 1), current_pence=1_000),
+    ]
+    points = _sparkline_points(flat)
+    assert points is not None
+    assert "inf" not in points and "nan" not in points
+
+
+def test_no_sparkline_with_only_one_valuation(client):
+    """A single reading has no trend to draw."""
+    assert "<svg" not in client.get("/wealth").text
+
+
+def test_a_second_valuation_draws_a_sparkline(client, stored):
+    pension = stored.wealth_accounts[0]
+    client.post(f"/wealth/{pension.id}/snapshot", data={"as_of": "2026-09-20", "current": "25000"})
+    assert "<polyline points=" in client.get("/wealth").text
 
 
 def test_add_and_delete_an_account_removes_its_snapshots(client):
@@ -361,14 +392,15 @@ def test_add_and_delete_an_account_removes_its_snapshots(client):
     assert document.snapshots_for(account.id) == []
 
 
-def test_bad_growth_value_does_not_500(client, stored):
-    pension = stored.wealth_accounts[0]
+def test_a_first_valuation_has_no_previous_figure_to_grow_from(client):
+    client.post("/wealth/accounts/add", data={"company": "A Fund"})
+    account = next(a for a in reload().wealth_accounts if a.company == "A Fund")
+
     response = client.post(
-        f"/wealth/{pension.id}/snapshot",
-        data={"as_of": "2026-09-20", "current": "100", "growth": "not a number"},
+        f"/wealth/{account.id}/snapshot", data={"as_of": "2026-09-20", "current": "100"}
     )
     assert response.status_code == 200
-    assert reload().latest_snapshot(pension.id).year_growth is None
+    assert reload().latest_snapshot(account.id).year_growth is None
 
 
 def test_snapshot_for_an_unknown_account_is_a_noop(client, stored):

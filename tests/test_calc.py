@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from datetime import date
 
+import pytest
+
 from finances import calc
 from finances.model import (
     Document,
@@ -112,6 +114,33 @@ def test_wealth_total_uses_only_the_newest_snapshot(doc: Document):
     )
     # Replaces the April figure rather than adding to it.
     assert calc.wealth_total(doc) == before - 2_367_900 + 3_000_000
+
+
+def test_annualised_growth_scales_a_short_gap_up_to_a_year(today: date):
+    """A ratio comparable across snapshots however far apart they land.
+
+    Doubled in exactly half a year is a much faster rate than doubled over a
+    full one, so the same 2x move must annualise to a bigger number.
+    """
+    six_months_ago = WealthSnapshot(account_id="a", as_of=date(2026, 3, 20), current_pence=1_000)
+    a_year_ago = WealthSnapshot(account_id="a", as_of=date(2025, 9, 20), current_pence=1_000)
+
+    fast = calc.annualised_growth(six_months_ago, 2_000, today)
+    slow = calc.annualised_growth(a_year_ago, 2_000, today)
+
+    assert fast > slow
+    assert slow == pytest.approx(1.0, abs=0.01)  # doubling in ~a year is ~100%
+
+
+def test_annualised_growth_is_none_without_a_comparable_previous_figure(today: date):
+    never_valued = WealthSnapshot(account_id="a", as_of=today, current_pence=None)
+    was_worthless = WealthSnapshot(account_id="a", as_of=date(2025, 1, 1), current_pence=0)
+    same_day = WealthSnapshot(account_id="a", as_of=today, current_pence=1_000)
+
+    assert calc.annualised_growth(None, 1_000, today) is None
+    assert calc.annualised_growth(never_valued, 1_000, today) is None
+    assert calc.annualised_growth(was_worthless, 1_000, today) is None
+    assert calc.annualised_growth(same_day, 1_000, today) is None
 
 
 def test_attention_flags_payday_renewal_and_stale_wealth(doc: Document):
