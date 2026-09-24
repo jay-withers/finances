@@ -11,8 +11,8 @@
   </div>
 </div>
 
-{% for account, latest, age, history, sparkline in accounts %}
-  <h2>{{ account.company }}</h2>
+{% for account, latest, age, history, sparkline, estimate in accounts %}
+  <h2>{{ account.company }}{% if account.still_contributing %} &middot; <span style="text-transform:none;letter-spacing:normal;color:var(--accent)">contributing</span>{% endif %}</h2>
   <div class="card">
     {% if sparkline %}
     <svg viewBox="0 0 160 40" width="100%" height="40" preserveAspectRatio="none"
@@ -27,10 +27,15 @@
         <td>Current</td>
         <td class="num">{{ latest.current_pence | money if latest and latest.current_pence is not none else '—' }}</td>
       </tr>
+      {% if latest and latest.yearly_projection_pence is not none %}
+      <tr><td>Yearly projection</td><td class="num">{{ latest.yearly_projection_pence | money }}</td></tr>
+      {% elif estimate is not none %}
       <tr>
-        <td>Yearly projection</td>
-        <td class="num">{{ latest.yearly_projection_pence | money if latest and latest.yearly_projection_pence is not none else '—' }}</td>
+        <td>Projected at retirement</td>
+        <td class="num">{{ estimate | money }}<br>
+          <span class="muted">est., to {{ account.target_retirement_year }}</span></td>
       </tr>
+      {% endif %}
       {% if account.planned_pot_pence is not none %}
       <tr><td>Planned pot</td><td class="num">{{ account.planned_pot_pence | money }}</td></tr>
       {% endif %}
@@ -76,19 +81,60 @@
       </form>
     </details>
 
-    {% if history | length > 1 %}
+    {% if history %}
     <details>
-      <summary>{{ history | length }} valuations</summary>
+      <summary>{{ history | length }} valuation{{ '' if history | length == 1 else 's' }}</summary>
       <table><tbody>
       {% for snapshot in history %}
         <tr>
           <td class="shrink muted">{{ snapshot.as_of.strftime('%-d %b %y') }}</td>
           <td class="num">{{ snapshot.current_pence | money if snapshot.current_pence is not none else '—' }}</td>
+          <td class="shrink">
+            <form method="post"
+                  action="/wealth/{{ account.id }}/snapshot/{{ snapshot.id }}/delete"
+                  class="inline-form">
+              <button class="tiny" type="submit">delete</button>
+            </form>
+          </td>
         </tr>
       {% endfor %}
       </tbody></table>
     </details>
     {% endif %}
+
+    <details>
+      <summary>Edit account</summary>
+      <form method="post" action="/wealth/accounts/{{ account.id }}">
+        <div class="field">
+          <label>Company</label>
+          <input type="text" name="company" value="{{ account.company }}" required>
+        </div>
+        <div class="row">
+          <div class="field">
+            <label>Planned pot</label>
+            <input type="number" name="planned" step="0.01" inputmode="decimal"
+                   value="{{ account.planned_pot_pence | pounds if account.planned_pot_pence is not none else '' }}">
+          </div>
+          <div class="field">
+            <label>Target retirement year</label>
+            <input type="number" name="target_retirement_year" step="1"
+                   value="{{ account.target_retirement_year or '' }}" placeholder="e.g. 2051">
+          </div>
+        </div>
+        <div class="field">
+          <label>Notes</label>
+          <input type="text" name="notes" value="{{ account.notes }}">
+        </div>
+        <div class="field">
+          <label><input type="checkbox" name="still_contributing" value="1" style="width:auto"
+                 {{ 'checked' if account.still_contributing }}> Still contributing</label>
+        </div>
+        <button type="submit">Save</button>
+      </form>
+      <form method="post" action="/wealth/accounts/{{ account.id }}/delete">
+        <button class="ghost" type="submit">Delete {{ account.company }}</button>
+      </form>
+    </details>
   </div>
 {% else %}
   <p class="muted">No accounts yet.</p>
@@ -108,6 +154,10 @@
     <div class="field">
       <label for="notes">Notes</label>
       <input type="text" id="notes" name="notes">
+    </div>
+    <div class="field">
+      <label><input type="checkbox" id="still_contributing" name="still_contributing" value="1"
+             style="width:auto"> Still contributing</label>
     </div>
     <button type="submit">Add</button>
   </form>

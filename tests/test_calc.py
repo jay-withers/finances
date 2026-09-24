@@ -16,6 +16,7 @@ from finances.model import (
     WealthAccount,
     WealthSnapshot,
 )
+from finances.settings import settings
 
 
 def test_pot_balance_is_the_sum_of_its_ledger(doc: Document):
@@ -141,6 +142,63 @@ def test_annualised_growth_is_none_without_a_comparable_previous_figure(today: d
     assert calc.annualised_growth(never_valued, 1_000, today) is None
     assert calc.annualised_growth(was_worthless, 1_000, today) is None
     assert calc.annualised_growth(same_day, 1_000, today) is None
+
+
+def test_projected_retirement_value_compounds_the_observed_growth_rate(today: date):
+    """A defined-contribution pot's stand-in for a defined-benefit figure."""
+    account = WealthAccount(company="A Fund", target_retirement_year=today.year + 10)
+    latest = WealthSnapshot(
+        account_id=account.id, as_of=today, current_pence=1_000_00, year_growth=0.05
+    )
+
+    projected = calc.projected_retirement_value(account, latest, today)
+
+    assert projected == round(1_000_00 * 1.05**10)
+
+
+@pytest.mark.parametrize("observed_growth", [0.63, -0.90])
+def test_projected_retirement_value_clamps_an_extreme_growth_rate(today: date, observed_growth):
+    """A few good months read as an annualised 63% must not become millions
+    compounded across decades — see the module docstring on the cap."""
+    account = WealthAccount(company="A Fund", target_retirement_year=today.year + 20)
+    latest = WealthSnapshot(
+        account_id=account.id, as_of=today, current_pence=1_000_00, year_growth=observed_growth
+    )
+
+    projected = calc.projected_retirement_value(account, latest, today)
+
+    cap = settings().retirement_growth_cap
+    capped_rate = cap if observed_growth > 0 else -cap
+    assert projected == round(1_000_00 * (1 + capped_rate) ** 20)
+
+
+@pytest.mark.parametrize(
+    ("target_year_offset", "current_pence", "year_growth"),
+    [
+        (None, 100_00, 0.05),  # no target year set
+        (10, None, 0.05),  # never valued
+        (10, 100_00, None),  # no growth rate to compound (e.g. first valuation)
+        (0, 100_00, 0.05),  # target year already reached
+    ],
+)
+def test_projected_retirement_value_is_none_without_enough_to_go_on(
+    today: date, target_year_offset, current_pence, year_growth
+):
+    account = WealthAccount(
+        company="A Fund",
+        target_retirement_year=(
+            today.year + target_year_offset if target_year_offset is not None else None
+        ),
+    )
+    latest = WealthSnapshot(
+        account_id=account.id, as_of=today, current_pence=current_pence, year_growth=year_growth
+    )
+    assert calc.projected_retirement_value(account, latest, today) is None
+
+
+def test_projected_retirement_value_is_none_with_no_snapshot_at_all(today: date):
+    account = WealthAccount(company="A Fund", target_retirement_year=today.year + 10)
+    assert calc.projected_retirement_value(account, None, today) is None
 
 
 def test_attention_flags_payday_renewal_and_stale_wealth(doc: Document):

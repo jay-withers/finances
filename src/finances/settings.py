@@ -101,6 +101,13 @@ class Settings(BaseSettings):
     # the quarterly calendar reminder this replaces.
     wealth_stale_days: int = 90
 
+    # The annual growth rate a retirement projection will compound, clamped to
+    # +/- this either way, however extreme the observed rate actually was.
+    # Uncapped, one noisy early reading compounded across decades produces
+    # numbers in the millions from a four-figure pot — see
+    # `calc.projected_retirement_value`.
+    retirement_growth_cap: float = 0.10
+
     log_level: str = Field(default="INFO")
 
 

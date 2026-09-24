@@ -344,6 +344,28 @@ def test_recording_a_valuation_appends_rather_than_replaces(client, stored):
     assert latest.year_growth == pytest.approx(expected)
 
 
+def test_a_mistyped_valuation_can_be_deleted(client, stored):
+    pension = stored.wealth_accounts[0]
+    mistyped = stored.latest_snapshot(pension.id)
+
+    client.post(f"/wealth/{pension.id}/snapshot/{mistyped.id}/delete")
+
+    document = reload()
+    assert mistyped.id not in [s.id for s in document.snapshots_for(pension.id)]
+
+
+def test_deleting_a_valuation_under_the_wrong_account_is_a_noop(client, stored):
+    """A stale form from a since-deleted account must not delete a reading
+    that has since been reassigned to a different one."""
+    pension, isa = stored.wealth_accounts[0], stored.wealth_accounts[1]
+    snapshot = stored.latest_snapshot(pension.id)
+
+    client.post(f"/wealth/{isa.id}/snapshot/{snapshot.id}/delete")
+
+    document = reload()
+    assert snapshot.id in [s.id for s in document.snapshots_for(pension.id)]
+
+
 def test_a_fresh_valuation_clears_the_stale_warning(client):
     assert "out of date" in client.get("/").text
     for account in reload().wealth_accounts:
@@ -390,6 +412,73 @@ def test_add_and_delete_an_account_removes_its_snapshots(client):
     assert account.id not in [a.id for a in document.wealth_accounts]
     # An orphaned snapshot would be invisible and counted by nothing.
     assert document.snapshots_for(account.id) == []
+
+
+def test_editing_an_unknown_account_is_a_noop(client, stored):
+    before = len(stored.wealth_accounts)
+    response = client.post("/wealth/accounts/does-not-exist", data={"company": "Ghost"})
+    assert response.status_code == 200
+    assert len(reload().wealth_accounts) == before
+
+
+def test_editing_an_account_updates_its_fields(client, stored):
+    pension = stored.wealth_accounts[0]
+    client.post(
+        f"/wealth/accounts/{pension.id}",
+        data={
+            "company": "Fidelity Renamed",
+            "planned": "2000",
+            "notes": "moved provider",
+            "still_contributing": "1",
+            "target_retirement_year": "2051",
+        },
+    )
+    updated = next(a for a in reload().wealth_accounts if a.id == pension.id)
+    assert updated.company == "Fidelity Renamed"
+    assert updated.planned_pot_pence == 200_000
+    assert updated.notes == "moved provider"
+    assert updated.still_contributing is True
+    assert updated.target_retirement_year == 2051
+
+
+def test_unticking_still_contributing_clears_it(client, stored):
+    pension = stored.wealth_accounts[0]
+    client.post(
+        f"/wealth/accounts/{pension.id}",
+        data={"company": pension.company, "still_contributing": "1"},
+    )
+    assert reload().account(pension.id).still_contributing is True
+
+    # No `still_contributing` key at all: an unticked checkbox submits nothing.
+    client.post(f"/wealth/accounts/{pension.id}", data={"company": pension.company})
+    assert reload().account(pension.id).still_contributing is False
+
+
+def test_still_contributing_accounts_are_listed_first(client, stored):
+    dormant, active = stored.wealth_accounts[0], stored.wealth_accounts[1]
+    client.post(
+        f"/wealth/accounts/{active.id}",
+        data={"company": active.company, "still_contributing": "1"},
+    )
+    text = client.get("/wealth").text
+    assert text.index(active.company) < text.index(dormant.company)
+
+
+def test_a_target_retirement_year_estimates_a_value_once_growth_is_known(client):
+    """The stand-in for a figure a defined-contribution pension never states outright."""
+    client.post("/wealth/accounts/add", data={"company": "A Fund"})
+    account = next(a for a in reload().wealth_accounts if a.company == "A Fund")
+    client.post(
+        f"/wealth/accounts/{account.id}",
+        data={"company": account.company, "target_retirement_year": "2050"},
+    )
+
+    client.post(f"/wealth/{account.id}/snapshot", data={"as_of": "2026-01-01", "current": "1000"})
+    # A first valuation has no previous figure to grow from, so no rate to compound.
+    assert "Projected at retirement" not in client.get("/wealth").text
+
+    client.post(f"/wealth/{account.id}/snapshot", data={"as_of": "2026-09-20", "current": "1100"})
+    assert "Projected at retirement" in client.get("/wealth").text
 
 
 def test_a_first_valuation_has_no_previous_figure_to_grow_from(client):

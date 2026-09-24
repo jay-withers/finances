@@ -650,7 +650,11 @@ def wealth_page(request: Request) -> Any:
         history = doc.snapshots_for(account.id)
         latest = doc.latest_snapshot(account.id)
         age = (today - latest.as_of).days if latest else None
-        accounts.append((account, latest, age, history, _sparkline_points(history)))
+        estimate = calc.projected_retirement_value(account, latest, today)
+        accounts.append((account, latest, age, history, _sparkline_points(history), estimate))
+    # Still-contributing first: the one pension actually growing by choice
+    # rather than by market luck is the one worth seeing without scrolling.
+    accounts.sort(key=lambda row: not row[0].still_contributing)
     return templates.TemplateResponse(
         request,
         "wealth.html",
@@ -667,7 +671,10 @@ def wealth_page(request: Request) -> Any:
 
 @router.post("/wealth/accounts/add", include_in_schema=False)
 def wealth_account_add(
-    company: str = Form(...), planned: str = Form(default=""), notes: str = Form(default="")
+    company: str = Form(...),
+    planned: str = Form(default=""),
+    notes: str = Form(default=""),
+    still_contributing: str = Form(default=""),
 ) -> Any:
     def change(doc: Document) -> Document:
         doc.wealth_accounts.append(
@@ -675,7 +682,34 @@ def wealth_account_add(
                 company=company.strip(),
                 planned_pot_pence=parse_money(planned) if planned.strip() else None,
                 notes=notes.strip(),
+                still_contributing=bool(still_contributing),
             )
+        )
+        return doc
+
+    _apply(change)
+    return _back("/wealth")
+
+
+@router.post("/wealth/accounts/{account_id}", include_in_schema=False)
+def wealth_account_edit(
+    account_id: str,
+    company: str = Form(...),
+    planned: str = Form(default=""),
+    notes: str = Form(default=""),
+    still_contributing: str = Form(default=""),
+    target_retirement_year: str = Form(default=""),
+) -> Any:
+    def change(doc: Document) -> Document:
+        account = doc.account(account_id)
+        if account is None:
+            return doc
+        account.company = company.strip()
+        account.planned_pot_pence = parse_money(planned) if planned.strip() else None
+        account.notes = notes.strip()
+        account.still_contributing = bool(still_contributing)
+        account.target_retirement_year = (
+            int(target_retirement_year) if target_retirement_year.strip().isdigit() else None
         )
         return doc
 
@@ -719,6 +753,29 @@ def wealth_snapshot_add(
                 ),
             )
         )
+        return doc
+
+    _apply(change)
+    return _back("/wealth")
+
+
+@router.post("/wealth/{account_id}/snapshot/{snapshot_id}/delete", include_in_schema=False)
+def wealth_snapshot_delete(account_id: str, snapshot_id: str) -> Any:
+    """Correct a mistyped valuation.
+
+    Matched on both ids rather than just the snapshot's, so a stale form from
+    a since-deleted account cannot delete a reading that has since been
+    reassigned. Deliberately does not recompute any later snapshot's stored
+    `year_growth` — those were worked out against whatever the previous
+    reading was at the time, same as the rest of this app's figures.
+    """
+
+    def change(doc: Document) -> Document:
+        doc.wealth_snapshots = [
+            s
+            for s in doc.wealth_snapshots
+            if not (s.id == snapshot_id and s.account_id == account_id)
+        ]
         return doc
 
     _apply(change)

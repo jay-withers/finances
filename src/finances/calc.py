@@ -225,6 +225,36 @@ def annualised_growth(
     return (current_pence / previous.current_pence) ** (1 / years) - 1
 
 
+def projected_retirement_value(
+    account: WealthAccount, latest: WealthSnapshot | None, today: date
+) -> int | None:
+    """A rough retirement-value estimate for a defined-contribution pot,
+    standing in for the figure a defined-benefit scheme (Army, State) already
+    states outright.
+
+    Compounds the latest valuation forward, at the growth rate its own last
+    reading implied, to the account's target retirement year. That rate is
+    clamped to `settings().retirement_growth_cap` either way first: one noisy
+    early reading — a few good months read as an annualised 25%+ — compounded
+    across decades otherwise turns a four-figure pot into a "rough estimate"
+    in the millions, which is not rough, it's wrong.
+
+    None without enough to go on: no target year set, no current figure, no
+    growth rate to compound (the very first valuation never has one), or a
+    target year already reached.
+    """
+    if account.target_retirement_year is None:
+        return None
+    if latest is None or latest.current_pence is None or latest.year_growth is None:
+        return None
+    years = account.target_retirement_year - today.year
+    if years <= 0:
+        return None
+    cap = settings().retirement_growth_cap
+    rate = max(-cap, min(cap, latest.year_growth))
+    return round(latest.current_pence * (1 + rate) ** years)
+
+
 def oldest_wealth_snapshot(doc: Document) -> tuple[WealthAccount, WealthSnapshot] | None:
     """The account whose newest figure is the most out of date.
 
