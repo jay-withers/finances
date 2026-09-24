@@ -128,7 +128,6 @@ class WealthAccount(BaseModel):
 
     id: str = Field(default_factory=new_id)
     company: str
-    planned_pot_pence: int | None = None
     notes: str = ""
     # Most of a household's pensions are frozen former-employer pots; this is
     # what lets the wealth page put the one still growing by contribution

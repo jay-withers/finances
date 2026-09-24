@@ -685,7 +685,6 @@ def wealth_page(request: Request) -> Any:
 @router.post("/wealth/accounts/add", include_in_schema=False)
 def wealth_account_add(
     company: str = Form(...),
-    planned: str = Form(default=""),
     notes: str = Form(default=""),
     still_contributing: str = Form(default=""),
 ) -> Any:
@@ -693,7 +692,6 @@ def wealth_account_add(
         doc.wealth_accounts.append(
             WealthAccount(
                 company=company.strip(),
-                planned_pot_pence=parse_money(planned) if planned.strip() else None,
                 notes=notes.strip(),
                 still_contributing=bool(still_contributing),
             )
@@ -708,7 +706,6 @@ def wealth_account_add(
 def wealth_account_edit(
     account_id: str,
     company: str = Form(...),
-    planned: str = Form(default=""),
     notes: str = Form(default=""),
     still_contributing: str = Form(default=""),
     target_retirement_year: str = Form(default=""),
@@ -718,7 +715,6 @@ def wealth_account_edit(
         if account is None:
             return doc
         account.company = company.strip()
-        account.planned_pot_pence = parse_money(planned) if planned.strip() else None
         account.notes = notes.strip()
         account.still_contributing = bool(still_contributing)
         account.target_retirement_year = (

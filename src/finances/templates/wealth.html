@@ -47,9 +47,6 @@
           <span class="muted">est., to {{ account.target_retirement_year }}</span></td>
       </tr>
       {% endif %}
-      {% if account.planned_pot_pence is not none %}
-      <tr><td>Planned pot</td><td class="num">{{ account.planned_pot_pence | money }}</td></tr>
-      {% endif %}
       {% if latest and latest.year_growth is not none %}
       <tr><td>Year growth</td><td class="num">{{ '%.2f' | format(latest.year_growth * 100) }}%</td></tr>
       {% endif %}
@@ -120,17 +117,10 @@
           <label>Company</label>
           <input type="text" name="company" value="{{ account.company }}" required>
         </div>
-        <div class="row">
-          <div class="field">
-            <label>Planned pot</label>
-            <input type="number" name="planned" step="0.01" inputmode="decimal"
-                   value="{{ account.planned_pot_pence | pounds if account.planned_pot_pence is not none else '' }}">
-          </div>
-          <div class="field">
-            <label>Target retirement year</label>
-            <input type="number" name="target_retirement_year" step="1"
-                   value="{{ account.target_retirement_year or '' }}" placeholder="e.g. 2051">
-          </div>
+        <div class="field">
+          <label>Target retirement year</label>
+          <input type="number" name="target_retirement_year" step="1"
+                 value="{{ account.target_retirement_year or '' }}" placeholder="e.g. 2051">
         </div>
         <div class="field">
           <label>Notes</label>
@@ -157,10 +147,6 @@
     <div class="field">
       <label for="company">Company</label>
       <input type="text" id="company" name="company" required>
-    </div>
-    <div class="field">
-      <label for="planned">Planned pot</label>
-      <input type="number" id="planned" name="planned" step="0.01" inputmode="decimal">
     </div>
     <div class="field">
       <label for="notes">Notes</label>

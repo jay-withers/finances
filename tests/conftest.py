@@ -117,7 +117,7 @@ def doc(today: date) -> Document:
         Renewal(kind="SIM", company="A Telco", rolling=True),
     ]
 
-    pension = WealthAccount(company="A Pension", planned_pot_pence=25_300_000)
+    pension = WealthAccount(company="A Pension")
     isa = WealthAccount(company="An ISA")
     document.wealth_accounts = [pension, isa]
     document.wealth_snapshots = [

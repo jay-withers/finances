@@ -417,7 +417,7 @@ def test_a_second_valuation_draws_a_sparkline(client, stored):
 
 
 def test_add_and_delete_an_account_removes_its_snapshots(client):
-    client.post("/wealth/accounts/add", data={"company": "A Fund", "planned": "1000"})
+    client.post("/wealth/accounts/add", data={"company": "A Fund"})
     account = next(a for a in reload().wealth_accounts if a.company == "A Fund")
     client.post(f"/wealth/{account.id}/snapshot", data={"as_of": "2026-09-01", "current": "500"})
     assert reload().snapshots_for(account.id)
@@ -442,7 +442,6 @@ def test_editing_an_account_updates_its_fields(client, stored):
         f"/wealth/accounts/{pension.id}",
         data={
             "company": "Fidelity Renamed",
-            "planned": "2000",
             "notes": "moved provider",
             "still_contributing": "1",
             "target_retirement_year": "2051",
@@ -450,7 +449,6 @@ def test_editing_an_account_updates_its_fields(client, stored):
     )
     updated = next(a for a in reload().wealth_accounts if a.id == pension.id)
     assert updated.company == "Fidelity Renamed"
-    assert updated.planned_pot_pence == 200_000
     assert updated.notes == "moved provider"
     assert updated.still_contributing is True
     assert updated.target_retirement_year == 2051
