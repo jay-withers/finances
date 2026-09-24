@@ -128,8 +128,21 @@ class WealthAccount(BaseModel):
 
     id: str = Field(default_factory=new_id)
     company: str
-    planned_pot_pence: int | None = None
     notes: str = ""
+    # Most of a household's pensions are frozen former-employer pots; this is
+    # what lets the wealth page put the one still growing by contribution
+    # first, not just by whichever happened to be updated most recently.
+    still_contributing: bool = False
+    # A defined-benefit pension (Army, State) states its retirement figure
+    # outright; a defined-contribution one does not, so `calc.py` estimates it
+    # by compounding this account's latest valuation forward to this year —
+    # see `calc.projected_retirement_value`.
+    target_retirement_year: int | None = None
+    # False for the Army and State pensions: there is exactly one of each,
+    # they don't move providers, and there's nothing about them a household
+    # would ever rename or delete. They still take new valuations — that's
+    # how their yearly projection gets updated — just not account edits.
+    editable: bool = True
 
 
 class WealthSnapshot(BaseModel):
@@ -145,9 +158,9 @@ class WealthSnapshot(BaseModel):
     as_of: date
     current_pence: int | None = None
     yearly_projection_pence: int | None = None
-    # A ratio, not a percentage: 0.2903 is 29.03%. Stored as given by the
-    # provider rather than recomputed, because it covers a period this app
-    # has no snapshots for.
+    # A ratio, not a percentage: 0.2903 is 29.03%. Computed by
+    # `calc.annualised_growth` against the account's previous snapshot when
+    # this one is recorded — see there for what makes it None.
     year_growth: float | None = None
 
 

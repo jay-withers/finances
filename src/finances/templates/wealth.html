@@ -2,30 +2,55 @@
 {% block subtitle %}{{ total | money }}{% endblock %}
 {% block body %}
 
-<div class="figures">
+<div class="figures" style="grid-template-columns:1fr 1fr 1fr">
   <div class="figure">
-    <div class="label">Current</div><div class="value">{{ total | money }}</div>
+    <div class="label">Current pot</div><div class="value">{{ total | money }}</div>
   </div>
   <div class="figure">
     <div class="label">Yearly projection</div><div class="value">{{ projection | money }}</div>
   </div>
+  <div class="figure">
+    <div class="label">Projected pot</div>
+    <div class="value">{{ retirement_estimate | money }}</div>
+  </div>
 </div>
 
-{% for account, latest, age, history in accounts %}
-  <h2>{{ account.company }}</h2>
+{% for account, latest, age, history, sparkline, estimate, change in accounts %}
+  <h2>{{ account.company }}{% if account.still_contributing %} &middot; <span style="text-transform:none;letter-spacing:normal;color:var(--accent)">contributing</span>{% endif %}</h2>
   <div class="card">
+    {% if sparkline and change %}
+    {% set up = change.amount_pence >= 0 %}
+    <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">
+      <strong style="font-size:15px;color:{{ 'var(--accent)' if up else 'var(--bad)' }}">
+        {{ '+' if up }}{{ change.amount_pence | money }}
+        ({{ '+' if up }}{{ '%.1f' | format(change.fraction * 100) }}%)
+      </strong>
+      <span class="muted" style="font-size:12px">since {{ change.since.strftime('%-d %b %y') }}</span>
+    </div>
+    <svg viewBox="0 0 160 40" width="100%" height="40" preserveAspectRatio="none"
+         style="display:block;margin-bottom:10px">
+      <polygon points="{{ sparkline.area }}" fill="{{ 'var(--accent)' if up else 'var(--bad)' }}"
+               fill-opacity="0.12" stroke="none"/>
+      <polyline points="{{ sparkline.line }}" fill="none"
+                stroke="{{ 'var(--accent)' if up else 'var(--bad)' }}"
+                stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    {% endif %}
     <table>
       <tbody>
       <tr>
-        <td>Current</td>
+        <td>Current pot</td>
         <td class="num">{{ latest.current_pence | money if latest and latest.current_pence is not none else '—' }}</td>
       </tr>
+      {% if latest and latest.yearly_projection_pence is not none %}
+      <tr><td>Yearly projection</td><td class="num">{{ latest.yearly_projection_pence | money }}</td></tr>
+      {% endif %}
+      {% if estimate is not none %}
       <tr>
-        <td>Yearly projection</td>
-        <td class="num">{{ latest.yearly_projection_pence | money if latest and latest.yearly_projection_pence is not none else '—' }}</td>
+        <td>Projected pot</td>
+        <td class="num">{{ estimate | money }}<br>
+          <span class="muted">est. for {{ account.target_retirement_year }}</span></td>
       </tr>
-      {% if account.planned_pot_pence is not none %}
-      <tr><td>Planned pot</td><td class="num">{{ account.planned_pot_pence | money }}</td></tr>
       {% endif %}
       {% if latest and latest.year_growth is not none %}
       <tr><td>Year growth</td><td class="num">{{ '%.2f' | format(latest.year_growth * 100) }}%</td></tr>
@@ -58,33 +83,64 @@
                    value="{{ latest.current_pence | pounds if latest and latest.current_pence is not none else '' }}">
           </div>
         </div>
-        <div class="row">
-          <div class="field">
-            <label>Yearly projection</label>
-            <input type="number" name="projection" step="0.01" inputmode="decimal"
-                   value="{{ latest.yearly_projection_pence | pounds if latest and latest.yearly_projection_pence is not none else '' }}">
-          </div>
-          <div class="field">
-            <label>Year growth (0.29 = 29%)</label>
-            <input type="number" name="growth" step="0.0001"
-                   value="{{ latest.year_growth if latest and latest.year_growth is not none else '' }}">
-          </div>
+        <div class="field">
+          <label>Yearly projection</label>
+          <input type="number" name="projection" step="0.01" inputmode="decimal"
+                 value="{{ latest.yearly_projection_pence | pounds if latest and latest.yearly_projection_pence is not none else '' }}">
         </div>
+        {# Year growth is no longer typed in — it is worked out from this
+           valuation against the previous one and just shown, above. #}
         <button type="submit">Record</button>
       </form>
     </details>
 
-    {% if history | length > 1 %}
+    {% if history %}
     <details>
-      <summary>{{ history | length }} valuations</summary>
+      <summary>{{ history | length }} valuation{{ '' if history | length == 1 else 's' }}</summary>
       <table><tbody>
       {% for snapshot in history %}
         <tr>
           <td class="shrink muted">{{ snapshot.as_of.strftime('%-d %b %y') }}</td>
           <td class="num">{{ snapshot.current_pence | money if snapshot.current_pence is not none else '—' }}</td>
+          <td class="shrink">
+            <form method="post"
+                  action="/wealth/{{ account.id }}/snapshot/{{ snapshot.id }}/delete"
+                  class="inline-form">
+              <button class="tiny" type="submit">delete</button>
+            </form>
+          </td>
         </tr>
       {% endfor %}
       </tbody></table>
+    </details>
+    {% endif %}
+
+    {% if account.editable %}
+    <details>
+      <summary>Edit account</summary>
+      <form method="post" action="/wealth/accounts/{{ account.id }}">
+        <div class="field">
+          <label>Company</label>
+          <input type="text" name="company" value="{{ account.company }}" required>
+        </div>
+        <div class="field">
+          <label>Target retirement year</label>
+          <input type="number" name="target_retirement_year" step="1"
+                 value="{{ account.target_retirement_year or '' }}" placeholder="e.g. 2051">
+        </div>
+        <div class="field">
+          <label>Notes</label>
+          <input type="text" name="notes" value="{{ account.notes }}">
+        </div>
+        <div class="field">
+          <label><input type="checkbox" name="still_contributing" value="1" style="width:auto"
+                 {{ 'checked' if account.still_contributing }}> Still contributing</label>
+        </div>
+        <button type="submit">Save</button>
+      </form>
+      <form method="post" action="/wealth/accounts/{{ account.id }}/delete">
+        <button class="ghost" type="submit">Delete {{ account.company }}</button>
+      </form>
     </details>
     {% endif %}
   </div>
@@ -100,12 +156,12 @@
       <input type="text" id="company" name="company" required>
     </div>
     <div class="field">
-      <label for="planned">Planned pot</label>
-      <input type="number" id="planned" name="planned" step="0.01" inputmode="decimal">
-    </div>
-    <div class="field">
       <label for="notes">Notes</label>
       <input type="text" id="notes" name="notes">
+    </div>
+    <div class="field">
+      <label><input type="checkbox" id="still_contributing" name="still_contributing" value="1"
+             style="width:auto"> Still contributing</label>
     </div>
     <button type="submit">Add</button>
   </form>

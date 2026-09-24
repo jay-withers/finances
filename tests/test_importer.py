@@ -138,8 +138,6 @@ def test_wealth(result):
     doc = result.document
     assert [a.company for a in doc.wealth_accounts] == ["Fidelity (RBC)", "Aviva", "Army", "State"]
     fidelity = doc.wealth_accounts[0]
-    assert fidelity.planned_pot_pence == parse_money("253000")
-
     snapshot = doc.latest_snapshot(fidelity.id)
     assert snapshot.as_of == date(2026, 4, 29)
     assert snapshot.current_pence == parse_money("23679")

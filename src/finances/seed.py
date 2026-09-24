@@ -101,24 +101,41 @@ def sample_document(today: date | None = None) -> Document:
         Renewal(kind="Mobile", company="Example Mobile", rolling=True),
     ]
 
-    pension = WealthAccount(company="Example Pension", planned_pot_pence=25_000_000)
-    isa = WealthAccount(company="Example ISA")
-    doc.wealth_accounts = [pension, isa]
+    # A private, defined-contribution pension — has a current pot value and a
+    # target retirement year to estimate one for, no known figure for what it
+    # pays in retirement — beside the two fixed, defined-benefit ones every
+    # household has exactly one of: no current value, but their annual income
+    # is known outright, which is what makes them uneditable (see
+    # `WealthAccount.editable`) rather than a normal account.
+    pension = WealthAccount(
+        company="Example Private Pension",
+        still_contributing=True,
+        target_retirement_year=today.year + 22,
+    )
+    army = WealthAccount(company="Example Army Pension", editable=False)
+    state = WealthAccount(company="State Pension", editable=False)
+    doc.wealth_accounts = [pension, army, state]
     doc.wealth_snapshots = [
+        WealthSnapshot(
+            account_id=pension.id, as_of=today - timedelta(days=200), current_pence=3_800_000
+        ),
+        # Recent enough not to be stale, so the trend and the estimate both
+        # show without waiting a quarter.
+        WealthSnapshot(
+            account_id=pension.id,
+            as_of=today - timedelta(days=40),
+            current_pence=4_210_000,
+            year_growth=0.081,
+        ),
         # Deliberately older than the 90-day staleness threshold, so the
         # quarterly nudge shows up without having to wait a quarter.
         WealthSnapshot(
-            account_id=pension.id,
-            as_of=today - timedelta(days=118),
-            current_pence=4_210_000,
-            yearly_projection_pence=1_850_000,
-            year_growth=0.081,
+            account_id=army.id, as_of=today - timedelta(days=118), yearly_projection_pence=850_000
         ),
         WealthSnapshot(
-            account_id=isa.id,
-            as_of=today - timedelta(days=40),
-            current_pence=1_640_000,
-            year_growth=0.052,
+            account_id=state.id,
+            as_of=today - timedelta(days=118),
+            yearly_projection_pence=1_150_000,
         ),
     ]
 

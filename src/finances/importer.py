@@ -308,12 +308,7 @@ def _import_wealth(sheet: Any, doc: Document, skipped: list[str]) -> None:
             skipped.append(f"wealth account {company!r} has no 'as of' date — no snapshot imported")
             continue
 
-        planned = _cell(sheet, f"D{row}")
-        account = WealthAccount(
-            company=company,
-            planned_pot_pence=parse_money(planned) if planned is not None else None,
-            notes=_text(_cell(sheet, f"G{row}")),
-        )
+        account = WealthAccount(company=company, notes=_text(_cell(sheet, f"G{row}")))
         doc.wealth_accounts.append(account)
 
         current = _cell(sheet, f"C{row}")

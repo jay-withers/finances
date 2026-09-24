@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 import pathlib
+from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from typing import Any
 
@@ -83,6 +84,40 @@ def _apply(change: Any) -> None:
         store.update(change)
     except store.ConflictError as exc:
         raise ConflictResponse(str(exc)) from exc
+
+
+@dataclass(frozen=True)
+class Sparkline:
+    """A valuation trend as SVG coordinates: a `<polyline>`'s points, and the
+    same line closed at the baseline for an `<polygon>` area fill under it."""
+
+    line: str
+    area: str
+
+
+def _sparkline(
+    snapshots: list[WealthSnapshot], width: float = 160, height: float = 40, pad: float = 4
+) -> Sparkline | None:
+    """A valuation trend, oldest to newest.
+
+    None with fewer than two valued readings: a single point has no trend to
+    draw, and `snapshots_for` includes rows recorded for the projection alone,
+    with no current figure at all.
+    """
+    valued = sorted((s for s in snapshots if s.current_pence is not None), key=lambda s: s.as_of)
+    if len(valued) < 2:
+        return None
+    values = [s.current_pence for s in valued]
+    low, high = min(values), max(values)
+    span = high - low or 1  # a flat line: centred rather than a division by zero
+    plot_height = height - 2 * pad
+    step = width / (len(values) - 1)
+    line = " ".join(
+        f"{i * step:.1f},{height - pad - (v - low) / span * plot_height:.1f}"
+        for i, v in enumerate(values)
+    )
+    area = f"0,{height:.1f} {line} {width:.1f},{height:.1f}"
+    return Sparkline(line=line, area=area)
 
 
 # --- login --------------------------------------------------------------------
@@ -624,9 +659,15 @@ def wealth_page(request: Request) -> Any:
     today = _today()
     accounts = []
     for account in doc.wealth_accounts:
+        history = doc.snapshots_for(account.id)
         latest = doc.latest_snapshot(account.id)
         age = (today - latest.as_of).days if latest else None
-        accounts.append((account, latest, age, doc.snapshots_for(account.id)))
+        estimate = calc.projected_retirement_value(account, latest, today)
+        change = calc.valuation_change(history)
+        accounts.append((account, latest, age, history, _sparkline(history), estimate, change))
+    # Still-contributing first: the one pension actually growing by choice
+    # rather than by market luck is the one worth seeing without scrolling.
+    accounts.sort(key=lambda row: not row[0].still_contributing)
     return templates.TemplateResponse(
         request,
         "wealth.html",
@@ -636,6 +677,7 @@ def wealth_page(request: Request) -> Any:
             "accounts": accounts,
             "total": calc.wealth_total(doc),
             "projection": calc.projection_total(doc),
+            "retirement_estimate": calc.retirement_estimate_total(doc, today),
             "stale_after": settings().wealth_stale_days,
         },
     )
@@ -643,15 +685,41 @@ def wealth_page(request: Request) -> Any:
 
 @router.post("/wealth/accounts/add", include_in_schema=False)
 def wealth_account_add(
-    company: str = Form(...), planned: str = Form(default=""), notes: str = Form(default="")
+    company: str = Form(...),
+    notes: str = Form(default=""),
+    still_contributing: str = Form(default=""),
 ) -> Any:
     def change(doc: Document) -> Document:
         doc.wealth_accounts.append(
             WealthAccount(
                 company=company.strip(),
-                planned_pot_pence=parse_money(planned) if planned.strip() else None,
                 notes=notes.strip(),
+                still_contributing=bool(still_contributing),
             )
+        )
+        return doc
+
+    _apply(change)
+    return _back("/wealth")
+
+
+@router.post("/wealth/accounts/{account_id}", include_in_schema=False)
+def wealth_account_edit(
+    account_id: str,
+    company: str = Form(...),
+    notes: str = Form(default=""),
+    still_contributing: str = Form(default=""),
+    target_retirement_year: str = Form(default=""),
+) -> Any:
+    def change(doc: Document) -> Document:
+        account = doc.account(account_id)
+        if account is None or not account.editable:
+            return doc
+        account.company = company.strip()
+        account.notes = notes.strip()
+        account.still_contributing = bool(still_contributing)
+        account.target_retirement_year = (
+            int(target_retirement_year) if target_retirement_year.strip().isdigit() else None
         )
         return doc
 
@@ -665,31 +733,59 @@ def wealth_snapshot_add(
     as_of: str = Form(default=""),
     current: str = Form(default=""),
     projection: str = Form(default=""),
-    growth: str = Form(default=""),
 ) -> Any:
     """Record this quarter's valuation.
 
     Appended, never overwritten: the whole reason for the quarterly ritual is
     the trend, and the spreadsheet threw away every previous reading.
+
+    Year growth is no longer typed in: it is worked out from this figure
+    against the account's previous snapshot, inside `change` so a retry after
+    a lost write compares against the same "previous" the first attempt did.
     """
     when = _date(as_of, _today())
 
     def change(doc: Document) -> Document:
         if doc.account(account_id) is None:
             return doc
-        try:
-            growth_value = float(growth) if growth.strip() else None
-        except ValueError:
-            growth_value = None
+        current_pence = parse_money(current) if current.strip() else None
+        previous = doc.latest_snapshot(account_id)
         doc.wealth_snapshots.append(
             WealthSnapshot(
                 account_id=account_id,
                 as_of=when,
-                current_pence=parse_money(current) if current.strip() else None,
+                current_pence=current_pence,
                 yearly_projection_pence=parse_money(projection) if projection.strip() else None,
-                year_growth=growth_value,
+                year_growth=(
+                    calc.annualised_growth(previous, current_pence, when)
+                    if current_pence is not None
+                    else None
+                ),
             )
         )
+        return doc
+
+    _apply(change)
+    return _back("/wealth")
+
+
+@router.post("/wealth/{account_id}/snapshot/{snapshot_id}/delete", include_in_schema=False)
+def wealth_snapshot_delete(account_id: str, snapshot_id: str) -> Any:
+    """Correct a mistyped valuation.
+
+    Matched on both ids rather than just the snapshot's, so a stale form from
+    a since-deleted account cannot delete a reading that has since been
+    reassigned. Deliberately does not recompute any later snapshot's stored
+    `year_growth` — those were worked out against whatever the previous
+    reading was at the time, same as the rest of this app's figures.
+    """
+
+    def change(doc: Document) -> Document:
+        doc.wealth_snapshots = [
+            s
+            for s in doc.wealth_snapshots
+            if not (s.id == snapshot_id and s.account_id == account_id)
+        ]
         return doc
 
     _apply(change)
@@ -699,6 +795,9 @@ def wealth_snapshot_add(
 @router.post("/wealth/accounts/{account_id}/delete", include_in_schema=False)
 def wealth_account_delete(account_id: str) -> Any:
     def change(doc: Document) -> Document:
+        account = doc.account(account_id)
+        if account is None or not account.editable:
+            return doc
         doc.wealth_accounts = [a for a in doc.wealth_accounts if a.id != account_id]
         # Its snapshots go with it: an orphaned snapshot is invisible in the UI
         # but still counted by nothing, which is worse than being gone.

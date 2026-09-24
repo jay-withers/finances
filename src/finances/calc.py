@@ -196,12 +196,112 @@ def wealth_total(doc: Document) -> int:
 
 
 def projection_total(doc: Document) -> int:
-    """Combined yearly projection across every account's newest snapshot."""
+    """Combined *known* yearly projection — a defined-benefit scheme's own
+    stated annual income in retirement (Army, State), never a defined-
+    contribution pot's estimated future value (`projected_retirement_value`),
+    which is a different kind of figure and deliberately never counted here.
+    """
     total = 0
     for account in doc.wealth_accounts:
         snapshot = doc.latest_snapshot(account.id)
         if snapshot and snapshot.yearly_projection_pence is not None:
             total += snapshot.yearly_projection_pence
+    return total
+
+
+@dataclass(frozen=True)
+class ValuationChange:
+    """How much an account has moved between its earliest and its most
+    recent valuation — the same span a sparkline of its history covers."""
+
+    amount_pence: int
+    fraction: float
+    since: date
+
+
+def valuation_change(snapshots: list[WealthSnapshot]) -> ValuationChange | None:
+    """The change over the full tracked history, not just the latest step.
+
+    None with fewer than two valued readings — nothing to compare — or an
+    earliest figure of zero or less, which a percentage change against is
+    meaningless.
+    """
+    valued = sorted((s for s in snapshots if s.current_pence is not None), key=lambda s: s.as_of)
+    if len(valued) < 2:
+        return None
+    first, last = valued[0], valued[-1]
+    if first.current_pence <= 0:
+        return None
+    delta = last.current_pence - first.current_pence
+    return ValuationChange(
+        amount_pence=delta, fraction=delta / first.current_pence, since=first.as_of
+    )
+
+
+def annualised_growth(
+    previous: WealthSnapshot | None, current_pence: int, as_of: date
+) -> float | None:
+    """The growth a new valuation implies, annualised so readings on any
+    schedule are comparable.
+
+    A ratio, not a percentage: 0.29 means 29%. None when there is nothing to
+    compare against, or the comparison would be meaningless — no previous
+    figure, a previous figure that was zero or less, or two valuations dated
+    the same day or earlier.
+    """
+    if previous is None or previous.current_pence is None or previous.current_pence <= 0:
+        return None
+    days = (as_of - previous.as_of).days
+    if days <= 0:
+        return None
+    years = days / 365.25
+    return (current_pence / previous.current_pence) ** (1 / years) - 1
+
+
+def projected_retirement_value(
+    account: WealthAccount, latest: WealthSnapshot | None, today: date
+) -> int | None:
+    """A rough pot-value estimate for a defined-contribution pension at
+    retirement — a different figure from `yearly_projection_pence`, which is
+    an annual income a defined-benefit scheme (Army, State) states outright.
+    The two are never added together for exactly that reason: one is a lump
+    sum, the other a rate.
+
+    Compounds the latest valuation forward, at the growth rate its own last
+    reading implied, to the account's target retirement year. That rate is
+    clamped to `settings().retirement_growth_cap` either way first: one noisy
+    early reading — a few good months read as an annualised 25%+ — compounded
+    across decades otherwise turns a four-figure pot into a "rough estimate"
+    in the millions, which is not rough, it's wrong.
+
+    None without enough to go on: no target year set, no current figure, no
+    growth rate to compound (the very first valuation never has one), or a
+    target year already reached.
+    """
+    if account.target_retirement_year is None:
+        return None
+    if latest is None or latest.current_pence is None or latest.year_growth is None:
+        return None
+    years = account.target_retirement_year - today.year
+    if years <= 0:
+        return None
+    cap = settings().retirement_growth_cap
+    rate = max(-cap, min(cap, latest.year_growth))
+    return round(latest.current_pence * (1 + rate) ** years)
+
+
+def retirement_estimate_total(doc: Document, today: date) -> int:
+    """Combined `projected_retirement_value` across every account that has
+    one — the lump-sum counterpart to `projection_total`'s annual-income
+    figure, kept as its own separate total for exactly the reason
+    `projected_retirement_value` explains: the two are different kinds of
+    quantity and must never be added together.
+    """
+    total = 0
+    for account in doc.wealth_accounts:
+        estimate = projected_retirement_value(account, doc.latest_snapshot(account.id), today)
+        if estimate is not None:
+            total += estimate
     return total
 
 
