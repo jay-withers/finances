@@ -2,15 +2,15 @@
 {% block subtitle %}{{ total | money }}{% endblock %}
 {% block body %}
 
-<div class="figures">
+<div class="figures" style="grid-template-columns:1fr 1fr 1fr">
   <div class="figure">
-    <div class="label">Current</div><div class="value">{{ total | money }}</div>
+    <div class="label">Current pot</div><div class="value">{{ total | money }}</div>
   </div>
   <div class="figure">
     <div class="label">Yearly projection</div><div class="value">{{ projection | money }}</div>
   </div>
   <div class="figure">
-    <div class="label">Projected at retirement</div>
+    <div class="label">Projected pot</div>
     <div class="value">{{ retirement_estimate | money }}</div>
   </div>
 </div>
@@ -39,7 +39,7 @@
     <table>
       <tbody>
       <tr>
-        <td>Current</td>
+        <td>Current pot</td>
         <td class="num">{{ latest.current_pence | money if latest and latest.current_pence is not none else '—' }}</td>
       </tr>
       {% if latest and latest.yearly_projection_pence is not none %}
@@ -47,7 +47,7 @@
       {% endif %}
       {% if estimate is not none %}
       <tr>
-        <td>Projected at retirement</td>
+        <td>Projected pot</td>
         <td class="num">{{ estimate | money }}<br>
           <span class="muted">est. for {{ account.target_retirement_year }}</span></td>
       </tr>
