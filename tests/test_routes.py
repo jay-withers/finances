@@ -357,10 +357,10 @@ def test_a_mistyped_valuation_can_be_deleted(client, stored):
 def test_deleting_a_valuation_under_the_wrong_account_is_a_noop(client, stored):
     """A stale form from a since-deleted account must not delete a reading
     that has since been reassigned to a different one."""
-    pension, isa = stored.wealth_accounts[0], stored.wealth_accounts[1]
+    pension, army = stored.wealth_accounts[0], stored.wealth_accounts[1]
     snapshot = stored.latest_snapshot(pension.id)
 
-    client.post(f"/wealth/{isa.id}/snapshot/{snapshot.id}/delete")
+    client.post(f"/wealth/{army.id}/snapshot/{snapshot.id}/delete")
 
     document = reload()
     assert snapshot.id in [s.id for s in document.snapshots_for(pension.id)]
@@ -436,6 +436,35 @@ def test_editing_an_unknown_account_is_a_noop(client, stored):
     assert len(reload().wealth_accounts) == before
 
 
+def test_army_and_state_cannot_be_edited(client, stored):
+    """There is exactly one of each; nothing about them is ever renamed."""
+    army = next(a for a in stored.wealth_accounts if a.company == "Army")
+    client.post(f"/wealth/accounts/{army.id}", data={"company": "Renamed"})
+    assert reload().account(army.id).company == "Army"
+
+
+def test_army_and_state_cannot_be_deleted(client, stored):
+    army = next(a for a in stored.wealth_accounts if a.company == "Army")
+    client.post(f"/wealth/accounts/{army.id}/delete")
+    assert army.id in [a.id for a in reload().wealth_accounts]
+
+
+def test_army_and_state_still_take_new_valuations(client, stored):
+    """Editing the account is blocked; recording what it pays is not — that's
+    how its yearly projection gets updated over time."""
+    army = next(a for a in stored.wealth_accounts if a.company == "Army")
+    client.post(f"/wealth/{army.id}/snapshot", data={"as_of": "2026-09-20", "projection": "9000"})
+    latest = reload().latest_snapshot(army.id)
+    assert latest.yearly_projection_pence == 900_000
+
+
+def test_army_and_state_have_no_edit_account_section_on_the_page(client):
+    text = client.get("/wealth").text
+    army_start = text.index("<h2>Army")
+    army_section = text[army_start : text.index("<h2>", army_start + 1)]
+    assert "Edit account" not in army_section
+
+
 def test_editing_an_account_updates_its_fields(client, stored):
     pension = stored.wealth_accounts[0]
     client.post(
@@ -468,13 +497,14 @@ def test_unticking_still_contributing_clears_it(client, stored):
 
 
 def test_still_contributing_accounts_are_listed_first(client, stored):
-    dormant, active = stored.wealth_accounts[0], stored.wealth_accounts[1]
+    """Newly marked as contributing, an account jumps ahead of the household's
+    fixed, never-contributing ones."""
+    dormant = next(a for a in stored.wealth_accounts if a.company == "Army")
     client.post(
-        f"/wealth/accounts/{active.id}",
-        data={"company": active.company, "still_contributing": "1"},
+        "/wealth/accounts/add", data={"company": "A New Pension", "still_contributing": "1"}
     )
     text = client.get("/wealth").text
-    assert text.index(active.company) < text.index(dormant.company)
+    assert text.index("A New Pension") < text.index(dormant.company)
 
 
 def test_a_target_retirement_year_estimates_a_value_once_growth_is_known(client):
@@ -494,10 +524,12 @@ def test_a_target_retirement_year_estimates_a_value_once_growth_is_known(client)
     assert "Projected at retirement" in client.get("/wealth").text
 
 
-def test_the_wealth_page_headline_counts_estimates_too(client, stored):
-    """Not just the known figures: an account with nothing manually entered
-    must not be silently excluded from the top-line total."""
-    headline = '<div class="label">Yearly projection</div><div class="value">£255,000</div>'
+def test_the_wealth_page_headline_never_counts_an_estimated_pot_value(client, stored):
+    """A lump-sum pot estimate and an annual income figure are different
+    kinds of quantity: the headline "Yearly projection" total must stay the
+    known, defined-benefit-style figures, even once an account gets an
+    estimate of its own."""
+    headline = '<div class="label">Yearly projection</div><div class="value">£20,000</div>'
     assert headline in client.get("/wealth").text
 
     client.post("/wealth/accounts/add", data={"company": "A Fund"})
@@ -509,7 +541,9 @@ def test_the_wealth_page_headline_counts_estimates_too(client, stored):
     client.post(f"/wealth/{account.id}/snapshot", data={"as_of": "2026-01-01", "current": "1000"})
     client.post(f"/wealth/{account.id}/snapshot", data={"as_of": "2026-09-20", "current": "1100"})
 
-    assert headline not in client.get("/wealth").text
+    text = client.get("/wealth").text
+    assert "Projected at retirement" in text  # the account's own row shows it...
+    assert headline in text  # ...but the headline total is unmoved
 
 
 def test_a_first_valuation_has_no_previous_figure_to_grow_from(client):

@@ -40,7 +40,8 @@
       </tr>
       {% if latest and latest.yearly_projection_pence is not none %}
       <tr><td>Yearly projection</td><td class="num">{{ latest.yearly_projection_pence | money }}</td></tr>
-      {% elif estimate is not none %}
+      {% endif %}
+      {% if estimate is not none %}
       <tr>
         <td>Projected at retirement</td>
         <td class="num">{{ estimate | money }}<br>
@@ -110,6 +111,7 @@
     </details>
     {% endif %}
 
+    {% if account.editable %}
     <details>
       <summary>Edit account</summary>
       <form method="post" action="/wealth/accounts/{{ account.id }}">
@@ -136,6 +138,7 @@
         <button class="ghost" type="submit">Delete {{ account.company }}</button>
       </form>
     </details>
+    {% endif %}
   </div>
 {% else %}
   <p class="muted">No accounts yet.</p>

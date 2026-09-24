@@ -196,7 +196,11 @@ def wealth_total(doc: Document) -> int:
 
 
 def projection_total(doc: Document) -> int:
-    """Combined yearly projection across every account's newest snapshot."""
+    """Combined *known* yearly projection — a defined-benefit scheme's own
+    stated annual income in retirement (Army, State), never a defined-
+    contribution pot's estimated future value (`projected_retirement_value`),
+    which is a different kind of figure and deliberately never counted here.
+    """
     total = 0
     for account in doc.wealth_accounts:
         snapshot = doc.latest_snapshot(account.id)
@@ -257,9 +261,11 @@ def annualised_growth(
 def projected_retirement_value(
     account: WealthAccount, latest: WealthSnapshot | None, today: date
 ) -> int | None:
-    """A rough retirement-value estimate for a defined-contribution pot,
-    standing in for the figure a defined-benefit scheme (Army, State) already
-    states outright.
+    """A rough pot-value estimate for a defined-contribution pension at
+    retirement — a different figure from `yearly_projection_pence`, which is
+    an annual income a defined-benefit scheme (Army, State) states outright.
+    The two are never added together for exactly that reason: one is a lump
+    sum, the other a rate.
 
     Compounds the latest valuation forward, at the growth rate its own last
     reading implied, to the account's target retirement year. That rate is
@@ -282,27 +288,6 @@ def projected_retirement_value(
     cap = settings().retirement_growth_cap
     rate = max(-cap, min(cap, latest.year_growth))
     return round(latest.current_pence * (1 + rate) ** years)
-
-
-def projection_total_estimated(doc: Document, today: date) -> int:
-    """`projection_total`, filled in with `projected_retirement_value` for
-    any account that has no manually-known figure.
-
-    Kept separate from `projection_total` rather than folding the fallback in
-    there: the importer's reconciliation check needs the strict, known-only
-    figure to verify against the spreadsheet's own total, a figure that
-    predates any notion of an estimate. This one is for the wealth page's
-    headline, which should count a rough number rather than nothing.
-    """
-    total = projection_total(doc)
-    for account in doc.wealth_accounts:
-        snapshot = doc.latest_snapshot(account.id)
-        if snapshot and snapshot.yearly_projection_pence is not None:
-            continue
-        estimate = projected_retirement_value(account, snapshot, today)
-        if estimate is not None:
-            total += estimate
-    return total
 
 
 def oldest_wealth_snapshot(doc: Document) -> tuple[WealthAccount, WealthSnapshot] | None:

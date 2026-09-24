@@ -676,7 +676,7 @@ def wealth_page(request: Request) -> Any:
             "today": today,
             "accounts": accounts,
             "total": calc.wealth_total(doc),
-            "projection": calc.projection_total_estimated(doc, today),
+            "projection": calc.projection_total(doc),
             "stale_after": settings().wealth_stale_days,
         },
     )
@@ -712,7 +712,7 @@ def wealth_account_edit(
 ) -> Any:
     def change(doc: Document) -> Document:
         account = doc.account(account_id)
-        if account is None:
+        if account is None or not account.editable:
             return doc
         account.company = company.strip()
         account.notes = notes.strip()
@@ -794,6 +794,9 @@ def wealth_snapshot_delete(account_id: str, snapshot_id: str) -> Any:
 @router.post("/wealth/accounts/{account_id}/delete", include_in_schema=False)
 def wealth_account_delete(account_id: str) -> Any:
     def change(doc: Document) -> Document:
+        account = doc.account(account_id)
+        if account is None or not account.editable:
+            return doc
         doc.wealth_accounts = [a for a in doc.wealth_accounts if a.id != account_id]
         # Its snapshots go with it: an orphaned snapshot is invisible in the UI
         # but still counted by nothing, which is worse than being gone.

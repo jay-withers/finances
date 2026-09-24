@@ -102,33 +102,33 @@ def test_renewals_sort_with_rolling_last(doc: Document, today: date):
 
 
 def test_wealth_totals_skip_accounts_with_no_figure(doc: Document):
-    """Two accounts, one of which has no projection — as in the spreadsheet."""
-    assert calc.wealth_total(doc) == 2_367_900 + 5_255_600
-    assert calc.projection_total(doc) == 25_500_000
+    """The private pension has a current value and no known projection;
+    Army and State are the other way round."""
+    assert calc.wealth_total(doc) == 2_367_900
+    assert calc.projection_total(doc) == 850_000 + 1_150_000
 
 
-def test_projection_total_estimated_adds_a_rough_figure_where_none_is_known(today: date):
-    """The wealth page's headline should count a rough number rather than
-    silently excluding an account that has no manually-known projection —
-    unlike `projection_total`, which the importer's reconciliation check
-    needs to stay strictly the known figures."""
+def test_projection_total_never_counts_an_estimated_pot_value(today: date):
+    """A lump-sum pot estimate and an annual income figure are different
+    kinds of quantity, so `projection_total` must never add them together —
+    it stays strictly the known, defined-benefit-style figures."""
     known = WealthAccount(company="Known")
     estimated = WealthAccount(company="Estimated", target_retirement_year=today.year + 10)
-    unknowable = WealthAccount(company="Unknowable")  # no target year set
-    document = Document(wealth_accounts=[known, estimated, unknowable])
+    document = Document(wealth_accounts=[known, estimated])
     document.wealth_snapshots = [
         WealthSnapshot(
             account_id=known.id, as_of=today, current_pence=1_000, yearly_projection_pence=2_000
         ),
         WealthSnapshot(account_id=estimated.id, as_of=today, current_pence=1_000, year_growth=0.05),
-        WealthSnapshot(account_id=unknowable.id, as_of=today, current_pence=1_000),
     ]
 
-    assert calc.projection_total(document) == 2_000  # only the known figure
-    expected_estimate = calc.projected_retirement_value(
-        estimated, document.latest_snapshot(estimated.id), today
+    # The estimated account's own retirement value is computable...
+    assert (
+        calc.projected_retirement_value(estimated, document.latest_snapshot(estimated.id), today)
+        is not None
     )
-    assert calc.projection_total_estimated(document, today) == 2_000 + expected_estimate
+    # ...but must not show up in the total of known figures.
+    assert calc.projection_total(document) == 2_000
 
 
 def test_wealth_total_uses_only_the_newest_snapshot(doc: Document):

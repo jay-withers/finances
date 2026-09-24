@@ -138,6 +138,11 @@ class WealthAccount(BaseModel):
     # by compounding this account's latest valuation forward to this year —
     # see `calc.projected_retirement_value`.
     target_retirement_year: int | None = None
+    # False for the Army and State pensions: there is exactly one of each,
+    # they don't move providers, and there's nothing about them a household
+    # would ever rename or delete. They still take new valuations — that's
+    # how their yearly projection gets updated — just not account edits.
+    editable: bool = True
 
 
 class WealthSnapshot(BaseModel):

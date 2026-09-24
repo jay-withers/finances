@@ -117,18 +117,24 @@ def doc(today: date) -> Document:
         Renewal(kind="SIM", company="A Telco", rolling=True),
     ]
 
-    pension = WealthAccount(company="A Pension")
-    isa = WealthAccount(company="An ISA")
-    document.wealth_accounts = [pension, isa]
+    # A private, defined-contribution pension — has a current pot value, no
+    # known figure for what it pays in retirement — beside the two fixed,
+    # defined-benefit ones every household has exactly one of: a current
+    # value is meaningless for these, but their annual income is known
+    # outright, which is what makes them uneditable rather than a normal
+    # account (see `WealthAccount.editable`).
+    pension = WealthAccount(company="A Pension", still_contributing=True)
+    army = WealthAccount(company="Army", editable=False)
+    state = WealthAccount(company="State", editable=False)
+    document.wealth_accounts = [pension, army, state]
     document.wealth_snapshots = [
+        WealthSnapshot(account_id=pension.id, as_of=date(2026, 4, 29), current_pence=2_367_900),
         WealthSnapshot(
-            account_id=pension.id,
-            as_of=date(2026, 4, 29),
-            current_pence=2_367_900,
-            yearly_projection_pence=25_500_000,
-            year_growth=0.2903,
+            account_id=army.id, as_of=date(2026, 7, 17), yearly_projection_pence=850_000
         ),
-        WealthSnapshot(account_id=isa.id, as_of=date(2026, 7, 17), current_pence=5_255_600),
+        WealthSnapshot(
+            account_id=state.id, as_of=date(2026, 7, 17), yearly_projection_pence=1_150_000
+        ),
     ]
 
     return document
