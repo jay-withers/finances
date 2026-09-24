@@ -41,8 +41,8 @@ def test_digest_names_everything_that_needs_attention(doc: Document):
     assert "Car MOT" in composed.text
     assert "in 39 days" in composed.text
     assert "Payday not yet run" in composed.text
-    assert "out of date" in composed.text
-    assert composed.item_count >= 3
+    assert "out of date" not in composed.text  # pensions never nag
+    assert composed.item_count >= 2
     assert "need attention" in composed.subject
 
 

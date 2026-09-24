@@ -15,7 +15,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import date
 
-from .model import Document, Pot, Renewal, WealthAccount, WealthSnapshot
+from .model import Document, Pot, Renewal
 from .settings import settings
 
 
@@ -205,23 +205,6 @@ def projection_total(doc: Document) -> int:
     return total
 
 
-def oldest_wealth_snapshot(doc: Document) -> tuple[WealthAccount, WealthSnapshot] | None:
-    """The account whose newest figure is the most out of date.
-
-    An account with no snapshot at all is not "stale" — it has never been
-    valued, which is a different problem and is visible on the wealth page as a
-    blank row.
-    """
-    dated = []
-    for account in doc.wealth_accounts:
-        snapshot = doc.latest_snapshot(account.id)
-        if snapshot is not None:
-            dated.append((account, snapshot))
-    if not dated:
-        return None
-    return min(dated, key=lambda pair: pair[1].as_of)
-
-
 # --- what needs attention -----------------------------------------------------
 
 
@@ -253,7 +236,9 @@ def attention(doc: Document, today: date) -> Attention:
 
     Ordered by how soon it matters: payday first because it is the one action
     with a deadline the household actually feels, then renewals by date, then
-    the quarterly wealth nudge, then anything structurally wrong.
+    anything structurally wrong. Pensions are deliberately never on this
+    panel — valuations arrive quarterly from the providers on their own
+    schedule, not something the household can act on by being nagged.
     """
     items: list[Item] = []
 
@@ -284,20 +269,6 @@ def attention(doc: Document, today: date) -> Attention:
         if renewal.company:
             detail = f"{renewal.company} — {detail}"
         items.append(Item(title=renewal.kind, detail=detail, href="/renewals", urgent=days <= 14))
-
-    oldest = oldest_wealth_snapshot(doc)
-    if oldest is not None:
-        account, snapshot = oldest
-        age = (today - snapshot.as_of).days
-        if age > settings().wealth_stale_days:
-            items.append(
-                Item(
-                    title="Wealth figures are out of date",
-                    detail=f"{account.company} last updated {snapshot.as_of:%-d %b %Y}"
-                    f" — {age} days ago",
-                    href="/wealth",
-                )
-            )
 
     balances = pot_balances(doc)
     for pot in doc.pots:

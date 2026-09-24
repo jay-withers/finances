@@ -16,9 +16,8 @@
   <div class="item ok">
     <span class="what">Nothing needs attention</span><br>
     <span class="why">
-      {{ doc.renewals | length }} renewal{{ '' if doc.renewals | length == 1 else 's' }},
-      {{ doc.pots | length }} savings pot{{ '' if doc.pots | length == 1 else 's' }} and
-      {{ doc.wealth_accounts | length }} pension account{{ '' if doc.wealth_accounts | length == 1 else 's' }} checked
+      {{ doc.renewals | length }} renewal{{ '' if doc.renewals | length == 1 else 's' }} and
+      {{ doc.pots | length }} savings pot{{ '' if doc.pots | length == 1 else 's' }} checked
     </span>
   </div>
 {% endfor %}

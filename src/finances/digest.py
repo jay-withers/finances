@@ -54,10 +54,7 @@ def compose(doc: Document, today: date, app_url: str = "") -> Digest:
         # The quiet path still says what was checked, so an empty digest is
         # distinguishable from a broken one.
         lines.append("Nothing needs attention.")
-        lines.append(
-            f"Checked {len(doc.renewals)} renewal(s), {len(doc.pots)} pot(s) "
-            f"and {len(doc.wealth_accounts)} wealth account(s)."
-        )
+        lines.append(f"Checked {len(doc.renewals)} renewal(s) and {len(doc.pots)} pot(s).")
     lines.append("")
 
     lines.append("This month")
@@ -111,8 +108,7 @@ def _html(
     else:
         body = (
             '<p style="color:#2e7d32">Nothing needs attention. Checked '
-            f"{len(doc.renewals)} renewal(s), {len(doc.pots)} pot(s) and "
-            f"{len(doc.wealth_accounts)} wealth account(s).</p>"
+            f"{len(doc.renewals)} renewal(s) and {len(doc.pots)} pot(s).</p>"
         )
 
     summary_rows = "".join(

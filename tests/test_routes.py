@@ -338,13 +338,8 @@ def test_recording_a_valuation_appends_rather_than_replaces(client, stored):
     assert latest.current_pence == 2_500_000
 
 
-def test_a_fresh_valuation_clears_the_stale_warning(client):
-    assert "out of date" in client.get("/").text
-    for account in reload().wealth_accounts:
-        client.post(
-            f"/wealth/{account.id}/snapshot",
-            data={"as_of": "2026-09-20", "current": "1000"},
-        )
+def test_pensions_never_appear_on_the_needs_attention_panel(client):
+    """However stale a snapshot, the dashboard must not nag about pensions."""
     assert "out of date" not in client.get("/").text
 
 

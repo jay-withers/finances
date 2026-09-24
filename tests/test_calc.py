@@ -114,14 +114,13 @@ def test_wealth_total_uses_only_the_newest_snapshot(doc: Document):
     assert calc.wealth_total(doc) == before - 2_367_900 + 3_000_000
 
 
-def test_attention_flags_payday_renewal_and_stale_wealth(doc: Document):
+def test_attention_flags_payday_and_renewals(doc: Document):
     # On the 28th: on or after the household's payday, so the nag is live.
     state = calc.attention(doc, date(2026, 9, 28))
     titles = [item.title for item in state.items]
 
     assert any("Payday not yet run" in t for t in titles)
     assert "Car MOT" in titles
-    assert any("out of date" in t for t in titles)
     # The overdrawn Car pot.
     assert "Car is overdrawn" in titles
     # The mortgage, still 253 days out.
@@ -178,10 +177,15 @@ def test_no_payday_nag_when_there_are_no_pots(today: date):
     assert calc.attention(document, today).items == []
 
 
-def test_wealth_account_with_no_snapshot_is_not_stale(today: date):
-    """Never valued is a different problem from out of date."""
-    document = Document(wealth_accounts=[WealthAccount(company="New")])
-    assert calc.oldest_wealth_snapshot(document) is None
+def test_attention_never_flags_pensions(today: date):
+    """The wealth/pensions section is checked quarterly by the household, not nagged at."""
+    pension = WealthAccount(company="A Pension")
+    document = Document(
+        wealth_accounts=[pension],
+        wealth_snapshots=[
+            WealthSnapshot(account_id=pension.id, as_of=date(2020, 1, 1), current_pence=100)
+        ],
+    )
     assert calc.attention(document, today).items == []
 
 
