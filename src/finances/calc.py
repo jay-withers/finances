@@ -205,6 +205,35 @@ def projection_total(doc: Document) -> int:
     return total
 
 
+@dataclass(frozen=True)
+class ValuationChange:
+    """How much an account has moved between its earliest and its most
+    recent valuation — the same span a sparkline of its history covers."""
+
+    amount_pence: int
+    fraction: float
+    since: date
+
+
+def valuation_change(snapshots: list[WealthSnapshot]) -> ValuationChange | None:
+    """The change over the full tracked history, not just the latest step.
+
+    None with fewer than two valued readings — nothing to compare — or an
+    earliest figure of zero or less, which a percentage change against is
+    meaningless.
+    """
+    valued = sorted((s for s in snapshots if s.current_pence is not None), key=lambda s: s.as_of)
+    if len(valued) < 2:
+        return None
+    first, last = valued[0], valued[-1]
+    if first.current_pence <= 0:
+        return None
+    delta = last.current_pence - first.current_pence
+    return ValuationChange(
+        amount_pence=delta, fraction=delta / first.current_pence, since=first.as_of
+    )
+
+
 def annualised_growth(
     previous: WealthSnapshot | None, current_pence: int, as_of: date
 ) -> float | None:

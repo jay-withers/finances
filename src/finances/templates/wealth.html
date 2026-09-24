@@ -11,13 +11,24 @@
   </div>
 </div>
 
-{% for account, latest, age, history, sparkline, estimate in accounts %}
+{% for account, latest, age, history, sparkline, estimate, change in accounts %}
   <h2>{{ account.company }}{% if account.still_contributing %} &middot; <span style="text-transform:none;letter-spacing:normal;color:var(--accent)">contributing</span>{% endif %}</h2>
   <div class="card">
-    {% if sparkline %}
+    {% if sparkline and change %}
+    {% set up = change.amount_pence >= 0 %}
+    <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">
+      <strong style="font-size:15px;color:{{ 'var(--accent)' if up else 'var(--bad)' }}">
+        {{ '+' if up }}{{ change.amount_pence | money }}
+        ({{ '+' if up }}{{ '%.1f' | format(change.fraction * 100) }}%)
+      </strong>
+      <span class="muted" style="font-size:12px">since {{ change.since.strftime('%-d %b %y') }}</span>
+    </div>
     <svg viewBox="0 0 160 40" width="100%" height="40" preserveAspectRatio="none"
          style="display:block;margin-bottom:10px">
-      <polyline points="{{ sparkline }}" fill="none" stroke="var(--accent)"
+      <polygon points="{{ sparkline.area }}" fill="{{ 'var(--accent)' if up else 'var(--bad)' }}"
+               fill-opacity="0.12" stroke="none"/>
+      <polyline points="{{ sparkline.line }}" fill="none"
+                stroke="{{ 'var(--accent)' if up else 'var(--bad)' }}"
                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
     </svg>
     {% endif %}

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 import pathlib
+from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from typing import Any
 
@@ -85,10 +86,19 @@ def _apply(change: Any) -> None:
         raise ConflictResponse(str(exc)) from exc
 
 
-def _sparkline_points(
+@dataclass(frozen=True)
+class Sparkline:
+    """A valuation trend as SVG coordinates: a `<polyline>`'s points, and the
+    same line closed at the baseline for an `<polygon>` area fill under it."""
+
+    line: str
+    area: str
+
+
+def _sparkline(
     snapshots: list[WealthSnapshot], width: float = 160, height: float = 40, pad: float = 4
-) -> str | None:
-    """SVG `<polyline>` points for a valuation trend, oldest to newest.
+) -> Sparkline | None:
+    """A valuation trend, oldest to newest.
 
     None with fewer than two valued readings: a single point has no trend to
     draw, and `snapshots_for` includes rows recorded for the projection alone,
@@ -102,10 +112,12 @@ def _sparkline_points(
     span = high - low or 1  # a flat line: centred rather than a division by zero
     plot_height = height - 2 * pad
     step = width / (len(values) - 1)
-    return " ".join(
+    line = " ".join(
         f"{i * step:.1f},{height - pad - (v - low) / span * plot_height:.1f}"
         for i, v in enumerate(values)
     )
+    area = f"0,{height:.1f} {line} {width:.1f},{height:.1f}"
+    return Sparkline(line=line, area=area)
 
 
 # --- login --------------------------------------------------------------------
@@ -651,7 +663,8 @@ def wealth_page(request: Request) -> Any:
         latest = doc.latest_snapshot(account.id)
         age = (today - latest.as_of).days if latest else None
         estimate = calc.projected_retirement_value(account, latest, today)
-        accounts.append((account, latest, age, history, _sparkline_points(history), estimate))
+        change = calc.valuation_change(history)
+        accounts.append((account, latest, age, history, _sparkline(history), estimate, change))
     # Still-contributing first: the one pension actually growing by choice
     # rather than by market luck is the one worth seeing without scrolling.
     accounts.sort(key=lambda row: not row[0].still_contributing)

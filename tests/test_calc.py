@@ -144,6 +144,34 @@ def test_annualised_growth_is_none_without_a_comparable_previous_figure(today: d
     assert calc.annualised_growth(same_day, 1_000, today) is None
 
 
+def test_valuation_change_covers_the_full_tracked_history():
+    """The change since the earliest reading, not just the latest step —
+    the same span a sparkline of the history covers."""
+    history = [
+        WealthSnapshot(account_id="a", as_of=date(2025, 1, 1), current_pence=1_000),
+        WealthSnapshot(account_id="a", as_of=date(2025, 6, 1), current_pence=900),  # a dip
+        WealthSnapshot(account_id="a", as_of=date(2026, 1, 1), current_pence=1_200),
+    ]
+    change = calc.valuation_change(history)
+    assert change.amount_pence == 200
+    assert change.fraction == pytest.approx(0.2)
+    assert change.since == date(2025, 1, 1)
+
+
+def test_valuation_change_is_none_without_two_valued_readings():
+    one_reading = [WealthSnapshot(account_id="a", as_of=date(2025, 1, 1), current_pence=1_000)]
+    never_valued = [WealthSnapshot(account_id="a", as_of=date(2025, 1, 1), current_pence=None)]
+    was_worthless = [
+        WealthSnapshot(account_id="a", as_of=date(2025, 1, 1), current_pence=0),
+        WealthSnapshot(account_id="a", as_of=date(2026, 1, 1), current_pence=500),
+    ]
+
+    assert calc.valuation_change([]) is None
+    assert calc.valuation_change(one_reading) is None
+    assert calc.valuation_change(never_valued) is None
+    assert calc.valuation_change(was_worthless) is None
+
+
 def test_projected_retirement_value_compounds_the_observed_growth_rate(today: date):
     """A defined-contribution pot's stand-in for a defined-benefit figure."""
     account = WealthAccount(company="A Fund", target_retirement_year=today.year + 10)

@@ -376,18 +376,27 @@ def test_a_fresh_valuation_clears_the_stale_warning(client):
     assert "out of date" not in client.get("/").text
 
 
-def test_sparkline_points_handles_a_flat_valuation():
+def test_a_drop_in_value_is_shown_in_the_bad_colour(client, stored):
+    pension = stored.wealth_accounts[0]
+    client.post(f"/wealth/{pension.id}/snapshot", data={"as_of": "2026-09-20", "current": "100"})
+    text = client.get("/wealth").text
+    assert "-£23,579" in text
+    assert "var(--bad)" in text
+
+
+def test_sparkline_handles_a_flat_valuation():
     """Two equal readings must not divide by a zero span."""
-    from finances.api.routes import _sparkline_points
+    from finances.api.routes import _sparkline
     from finances.model import WealthSnapshot
 
     flat = [
         WealthSnapshot(account_id="a", as_of=date(2026, 1, 1), current_pence=1_000),
         WealthSnapshot(account_id="a", as_of=date(2026, 4, 1), current_pence=1_000),
     ]
-    points = _sparkline_points(flat)
+    points = _sparkline(flat)
     assert points is not None
-    assert "inf" not in points and "nan" not in points
+    assert "inf" not in points.line and "nan" not in points.line
+    assert "inf" not in points.area and "nan" not in points.area
 
 
 def test_no_sparkline_with_only_one_valuation(client):
@@ -398,7 +407,13 @@ def test_no_sparkline_with_only_one_valuation(client):
 def test_a_second_valuation_draws_a_sparkline(client, stored):
     pension = stored.wealth_accounts[0]
     client.post(f"/wealth/{pension.id}/snapshot", data={"as_of": "2026-09-20", "current": "25000"})
-    assert "<polyline points=" in client.get("/wealth").text
+    text = client.get("/wealth").text
+    assert "<polyline points=" in text
+    assert "<polygon points=" in text
+    # A rise from £23,679 to £25,000: shown as the change over the whole
+    # tracked history, not just the latest step.
+    assert "+£1,321" in text
+    assert "since 29 Apr 26" in text
 
 
 def test_add_and_delete_an_account_removes_its_snapshots(client):
