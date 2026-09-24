@@ -494,6 +494,24 @@ def test_a_target_retirement_year_estimates_a_value_once_growth_is_known(client)
     assert "Projected at retirement" in client.get("/wealth").text
 
 
+def test_the_wealth_page_headline_counts_estimates_too(client, stored):
+    """Not just the known figures: an account with nothing manually entered
+    must not be silently excluded from the top-line total."""
+    headline = '<div class="label">Yearly projection</div><div class="value">£255,000</div>'
+    assert headline in client.get("/wealth").text
+
+    client.post("/wealth/accounts/add", data={"company": "A Fund"})
+    account = next(a for a in reload().wealth_accounts if a.company == "A Fund")
+    client.post(
+        f"/wealth/accounts/{account.id}",
+        data={"company": account.company, "target_retirement_year": "2060"},
+    )
+    client.post(f"/wealth/{account.id}/snapshot", data={"as_of": "2026-01-01", "current": "1000"})
+    client.post(f"/wealth/{account.id}/snapshot", data={"as_of": "2026-09-20", "current": "1100"})
+
+    assert headline not in client.get("/wealth").text
+
+
 def test_a_first_valuation_has_no_previous_figure_to_grow_from(client):
     client.post("/wealth/accounts/add", data={"company": "A Fund"})
     account = next(a for a in reload().wealth_accounts if a.company == "A Fund")

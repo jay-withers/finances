@@ -107,6 +107,30 @@ def test_wealth_totals_skip_accounts_with_no_figure(doc: Document):
     assert calc.projection_total(doc) == 25_500_000
 
 
+def test_projection_total_estimated_adds_a_rough_figure_where_none_is_known(today: date):
+    """The wealth page's headline should count a rough number rather than
+    silently excluding an account that has no manually-known projection —
+    unlike `projection_total`, which the importer's reconciliation check
+    needs to stay strictly the known figures."""
+    known = WealthAccount(company="Known")
+    estimated = WealthAccount(company="Estimated", target_retirement_year=today.year + 10)
+    unknowable = WealthAccount(company="Unknowable")  # no target year set
+    document = Document(wealth_accounts=[known, estimated, unknowable])
+    document.wealth_snapshots = [
+        WealthSnapshot(
+            account_id=known.id, as_of=today, current_pence=1_000, yearly_projection_pence=2_000
+        ),
+        WealthSnapshot(account_id=estimated.id, as_of=today, current_pence=1_000, year_growth=0.05),
+        WealthSnapshot(account_id=unknowable.id, as_of=today, current_pence=1_000),
+    ]
+
+    assert calc.projection_total(document) == 2_000  # only the known figure
+    expected_estimate = calc.projected_retirement_value(
+        estimated, document.latest_snapshot(estimated.id), today
+    )
+    assert calc.projection_total_estimated(document, today) == 2_000 + expected_estimate
+
+
 def test_wealth_total_uses_only_the_newest_snapshot(doc: Document):
     pension = doc.wealth_accounts[0]
     before = calc.wealth_total(doc)

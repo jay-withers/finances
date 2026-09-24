@@ -284,6 +284,27 @@ def projected_retirement_value(
     return round(latest.current_pence * (1 + rate) ** years)
 
 
+def projection_total_estimated(doc: Document, today: date) -> int:
+    """`projection_total`, filled in with `projected_retirement_value` for
+    any account that has no manually-known figure.
+
+    Kept separate from `projection_total` rather than folding the fallback in
+    there: the importer's reconciliation check needs the strict, known-only
+    figure to verify against the spreadsheet's own total, a figure that
+    predates any notion of an estimate. This one is for the wealth page's
+    headline, which should count a rough number rather than nothing.
+    """
+    total = projection_total(doc)
+    for account in doc.wealth_accounts:
+        snapshot = doc.latest_snapshot(account.id)
+        if snapshot and snapshot.yearly_projection_pence is not None:
+            continue
+        estimate = projected_retirement_value(account, snapshot, today)
+        if estimate is not None:
+            total += estimate
+    return total
+
+
 def oldest_wealth_snapshot(doc: Document) -> tuple[WealthAccount, WealthSnapshot] | None:
     """The account whose newest figure is the most out of date.
 
