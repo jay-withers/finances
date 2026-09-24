@@ -290,6 +290,21 @@ def projected_retirement_value(
     return round(latest.current_pence * (1 + rate) ** years)
 
 
+def retirement_estimate_total(doc: Document, today: date) -> int:
+    """Combined `projected_retirement_value` across every account that has
+    one — the lump-sum counterpart to `projection_total`'s annual-income
+    figure, kept as its own separate total for exactly the reason
+    `projected_retirement_value` explains: the two are different kinds of
+    quantity and must never be added together.
+    """
+    total = 0
+    for account in doc.wealth_accounts:
+        estimate = projected_retirement_value(account, doc.latest_snapshot(account.id), today)
+        if estimate is not None:
+            total += estimate
+    return total
+
+
 def oldest_wealth_snapshot(doc: Document) -> tuple[WealthAccount, WealthSnapshot] | None:
     """The account whose newest figure is the most out of date.
 

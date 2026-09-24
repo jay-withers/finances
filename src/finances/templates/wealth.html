@@ -9,6 +9,10 @@
   <div class="figure">
     <div class="label">Yearly projection</div><div class="value">{{ projection | money }}</div>
   </div>
+  <div class="figure">
+    <div class="label">Projected at retirement</div>
+    <div class="value">{{ retirement_estimate | money }}</div>
+  </div>
 </div>
 
 {% for account, latest, age, history, sparkline, estimate, change in accounts %}

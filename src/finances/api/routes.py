@@ -677,6 +677,7 @@ def wealth_page(request: Request) -> Any:
             "accounts": accounts,
             "total": calc.wealth_total(doc),
             "projection": calc.projection_total(doc),
+            "retirement_estimate": calc.retirement_estimate_total(doc, today),
             "stale_after": settings().wealth_stale_days,
         },
     )

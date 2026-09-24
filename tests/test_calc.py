@@ -108,6 +108,23 @@ def test_wealth_totals_skip_accounts_with_no_figure(doc: Document):
     assert calc.projection_total(doc) == 850_000 + 1_150_000
 
 
+def test_retirement_estimate_total_is_the_lump_sum_counterpart(doc: Document, today: date):
+    """`projection_total`'s annual-income figures never count towards this,
+    and vice versa — see `projected_retirement_value` for why."""
+    assert calc.retirement_estimate_total(doc, today) == 0  # no target year set yet
+
+    pension = doc.wealth_accounts[0]
+    pension.target_retirement_year = today.year + 10
+    doc.wealth_snapshots.append(
+        WealthSnapshot(
+            account_id=pension.id, as_of=today, current_pence=3_000_000, year_growth=0.05
+        )
+    )
+    expected = calc.projected_retirement_value(pension, doc.latest_snapshot(pension.id), today)
+    assert calc.retirement_estimate_total(doc, today) == expected
+    assert expected > 0
+
+
 def test_projection_total_never_counts_an_estimated_pot_value(today: date):
     """A lump-sum pot estimate and an annual income figure are different
     kinds of quantity, so `projection_total` must never add them together —

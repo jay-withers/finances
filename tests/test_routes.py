@@ -516,12 +516,13 @@ def test_a_target_retirement_year_estimates_a_value_once_growth_is_known(client)
         data={"company": account.company, "target_retirement_year": "2050"},
     )
 
+    row = "<td>Projected at retirement</td>"
     client.post(f"/wealth/{account.id}/snapshot", data={"as_of": "2026-01-01", "current": "1000"})
     # A first valuation has no previous figure to grow from, so no rate to compound.
-    assert "Projected at retirement" not in client.get("/wealth").text
+    assert row not in client.get("/wealth").text
 
     client.post(f"/wealth/{account.id}/snapshot", data={"as_of": "2026-09-20", "current": "1100"})
-    assert "Projected at retirement" in client.get("/wealth").text
+    assert row in client.get("/wealth").text
 
 
 def test_the_wealth_page_headline_never_counts_an_estimated_pot_value(client, stored):
@@ -542,8 +543,27 @@ def test_the_wealth_page_headline_never_counts_an_estimated_pot_value(client, st
     client.post(f"/wealth/{account.id}/snapshot", data={"as_of": "2026-09-20", "current": "1100"})
 
     text = client.get("/wealth").text
-    assert "Projected at retirement" in text  # the account's own row shows it...
-    assert headline in text  # ...but the headline total is unmoved
+    assert "<td>Projected at retirement</td>" in text  # the account's own row shows it...
+    assert headline in text  # ...but the "Yearly projection" headline is unmoved
+
+
+def test_the_retirement_estimate_headline_counts_estimated_accounts(client, stored):
+    """The lump-sum counterpart to the "Yearly projection" headline, kept
+    as its own separate total for the same reason the two rows are never
+    merged."""
+    zero = '<div class="label">Projected at retirement</div>\n    <div class="value">£0</div>'
+    assert zero in client.get("/wealth").text
+
+    client.post("/wealth/accounts/add", data={"company": "A Fund"})
+    account = next(a for a in reload().wealth_accounts if a.company == "A Fund")
+    client.post(
+        f"/wealth/accounts/{account.id}",
+        data={"company": account.company, "target_retirement_year": "2060"},
+    )
+    client.post(f"/wealth/{account.id}/snapshot", data={"as_of": "2026-01-01", "current": "1000"})
+    client.post(f"/wealth/{account.id}/snapshot", data={"as_of": "2026-09-20", "current": "1100"})
+
+    assert zero not in client.get("/wealth").text
 
 
 def test_a_first_valuation_has_no_previous_figure_to_grow_from(client):
