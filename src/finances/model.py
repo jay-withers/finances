@@ -138,6 +138,13 @@ class WealthAccount(BaseModel):
     # by compounding this account's latest valuation forward to this year —
     # see `calc.projected_retirement_value`.
     target_retirement_year: int | None = None
+    # A ratio, not a percentage: 0.05 is 5%. When set, `calc.projected_retirement_value`
+    # compounds this instead of the latest snapshot's own `year_growth`. The
+    # observed rate is worked out from the raw change in the pot's value, which
+    # for a `still_contributing` account is inflated by new money going in, not
+    # just market return — this is the household's way of saying "assume X%
+    # growth" instead of trusting that blend.
+    assumed_growth_rate: float | None = None
     # False for the Army and State pensions: there is exactly one of each,
     # they don't move providers, and there's nothing about them a household
     # would ever rename or delete. They still take new valuations — that's
@@ -159,8 +166,8 @@ class WealthSnapshot(BaseModel):
     current_pence: int | None = None
     yearly_projection_pence: int | None = None
     # A ratio, not a percentage: 0.2903 is 29.03%. Computed by
-    # `calc.annualised_growth` against the account's previous snapshot when
-    # this one is recorded — see there for what makes it None.
+    # `calc.annualised_growth` against the account's history when this one is
+    # recorded — see there for what makes it None.
     year_growth: float | None = None
 
 
