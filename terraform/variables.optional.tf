@@ -79,9 +79,9 @@ variable "image_tag" {
 # --- the digest job -----------------------------------------------------------
 
 variable "digest_cron_expression" {
-  description = "When the reminder digest runs, in **UTC** — Container Apps jobs have no timezone setting. The default is 08:00 UTC on the 1st of each month, which is 08:00 or 09:00 in the UK depending on the season. Monthly rather than quarterly because the renewal check is monthly; the wealth nudge is included only when the newest snapshot is stale."
+  description = "When the reminder digest runs, in **UTC** — Container Apps jobs have no timezone setting. The default is 17:00 UTC every Friday: early evening UK time either side of the clock change (17:00 GMT, 18:00 BST), so anything that needs attention has a chance to surface before the weekend rather than waiting for a fixed date."
   type        = string
-  default     = "0 8 1 * *"
+  default     = "0 17 * * 5"
 }
 
 # --- the custom domain --------------------------------------------------------
