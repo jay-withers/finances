@@ -653,6 +653,21 @@ def renewal_delete(renewal_id: str) -> Any:
 # --- wealth -------------------------------------------------------------------
 
 
+def _parse_rate(value: str) -> float | None:
+    """A form percentage like `"5"` or `"-2.5"` to the ratio `calc` expects.
+
+    Blank or unparseable is None rather than raising — same latitude
+    `target_retirement_year` gets below, since this is an optional override,
+    not a required figure.
+    """
+    if not value.strip():
+        return None
+    try:
+        return float(value) / 100
+    except ValueError:
+        return None
+
+
 @router.get("/wealth", response_class=HTMLResponse, include_in_schema=False)
 def wealth_page(request: Request) -> Any:
     doc, _etag = store.load()
@@ -710,6 +725,7 @@ def wealth_account_edit(
     notes: str = Form(default=""),
     still_contributing: str = Form(default=""),
     target_retirement_year: str = Form(default=""),
+    assumed_growth_rate: str = Form(default=""),
 ) -> Any:
     def change(doc: Document) -> Document:
         account = doc.account(account_id)
@@ -721,6 +737,7 @@ def wealth_account_edit(
         account.target_retirement_year = (
             int(target_retirement_year) if target_retirement_year.strip().isdigit() else None
         )
+        account.assumed_growth_rate = _parse_rate(assumed_growth_rate)
         return doc
 
     _apply(change)
@@ -740,8 +757,8 @@ def wealth_snapshot_add(
     the trend, and the spreadsheet threw away every previous reading.
 
     Year growth is no longer typed in: it is worked out from this figure
-    against the account's previous snapshot, inside `change` so a retry after
-    a lost write compares against the same "previous" the first attempt did.
+    against the account's history, inside `change` so a retry after a lost
+    write compares against the same history the first attempt did.
     """
     when = _date(as_of, _today())
 
@@ -749,7 +766,7 @@ def wealth_snapshot_add(
         if doc.account(account_id) is None:
             return doc
         current_pence = parse_money(current) if current.strip() else None
-        previous = doc.latest_snapshot(account_id)
+        history = doc.snapshots_for(account_id)
         doc.wealth_snapshots.append(
             WealthSnapshot(
                 account_id=account_id,
@@ -757,7 +774,7 @@ def wealth_snapshot_add(
                 current_pence=current_pence,
                 yearly_projection_pence=parse_money(projection) if projection.strip() else None,
                 year_growth=(
-                    calc.annualised_growth(previous, current_pence, when)
+                    calc.annualised_growth(history, current_pence, when)
                     if current_pence is not None
                     else None
                 ),

@@ -326,8 +326,8 @@ def test_a_due_renewal_shows_on_the_dashboard(client):
 def test_recording_a_valuation_appends_rather_than_replaces(client, stored):
     """The trend is the point; the spreadsheet threw every previous reading away."""
     pension = stored.wealth_accounts[0]
-    previous = stored.latest_snapshot(pension.id)
-    before = len(stored.snapshots_for(pension.id))
+    history = stored.snapshots_for(pension.id)
+    before = len(history)
 
     client.post(
         f"/wealth/{pension.id}/snapshot",
@@ -339,8 +339,8 @@ def test_recording_a_valuation_appends_rather_than_replaces(client, stored):
     latest = document.latest_snapshot(pension.id)
     assert latest.as_of == date(2026, 9, 20)
     assert latest.current_pence == 2_500_000
-    # Worked out from the previous snapshot rather than typed in.
-    expected = calc.annualised_growth(previous, 2_500_000, date(2026, 9, 20))
+    # Worked out from the account's history rather than typed in.
+    expected = calc.annualised_growth(history, 2_500_000, date(2026, 9, 20))
     assert latest.year_growth == pytest.approx(expected)
 
 
@@ -481,6 +481,19 @@ def test_editing_an_account_updates_its_fields(client, stored):
     assert updated.notes == "moved provider"
     assert updated.still_contributing is True
     assert updated.target_retirement_year == 2051
+
+
+def test_editing_an_account_sets_an_assumed_growth_rate(client, stored):
+    pension = stored.wealth_accounts[0]
+    client.post(
+        f"/wealth/accounts/{pension.id}",
+        data={"company": pension.company, "assumed_growth_rate": "4.5"},
+    )
+    assert reload().account(pension.id).assumed_growth_rate == pytest.approx(0.045)
+
+    # Blank clears it back to the observed rate.
+    client.post(f"/wealth/accounts/{pension.id}", data={"company": pension.company})
+    assert reload().account(pension.id).assumed_growth_rate is None
 
 
 def test_unticking_still_contributing_clears_it(client, stored):

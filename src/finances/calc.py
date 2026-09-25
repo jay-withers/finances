@@ -13,7 +13,7 @@ Every function takes the document and returns a value. None of them mutate.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, timedelta
 
 from .model import Document, Pot, Renewal, WealthAccount, WealthSnapshot
 from .settings import settings
@@ -239,21 +239,36 @@ def valuation_change(snapshots: list[WealthSnapshot]) -> ValuationChange | None:
 
 
 def annualised_growth(
-    previous: WealthSnapshot | None, current_pence: int, as_of: date
+    history: list[WealthSnapshot], current_pence: int, as_of: date
 ) -> float | None:
     """The growth a new valuation implies, annualised so readings on any
     schedule are comparable.
 
+    Compares against the valued reading closest to a year before `as_of`,
+    not simply whichever one came immediately before it. With quarterly
+    snapshots, comparing against the last one means annualising a three-month
+    move — raising a small, noisy ratio to the fourth power, which is exactly
+    how a so-so quarter reads as a much bigger annual rate than the account
+    actually grew by. A reading close to a full year back needs almost no
+    annualising at all, so the result is close to what actually happened over
+    that year rather than an extrapolation of a slice of it. This naturally
+    degrades to the old immediately-previous behaviour for an account with no
+    reading older than that yet.
+
     A ratio, not a percentage: 0.29 means 29%. None when there is nothing to
-    compare against, or the comparison would be meaningless — no previous
-    figure, a previous figure that was zero or less, or two valuations dated
-    the same day or earlier.
+    compare against — no prior valued reading, or the closest one is dated
+    the same day as `as_of` or later.
     """
-    if previous is None or previous.current_pence is None or previous.current_pence <= 0:
+    valued = [
+        s
+        for s in history
+        if s.current_pence is not None and s.current_pence > 0 and s.as_of < as_of
+    ]
+    if not valued:
         return None
+    target = as_of - timedelta(days=365)
+    previous = min(valued, key=lambda s: abs((s.as_of - target).days))
     days = (as_of - previous.as_of).days
-    if days <= 0:
-        return None
     years = days / 365.25
     return (current_pence / previous.current_pence) ** (1 / years) - 1
 
@@ -267,26 +282,39 @@ def projected_retirement_value(
     The two are never added together for exactly that reason: one is a lump
     sum, the other a rate.
 
-    Compounds the latest valuation forward, at the growth rate its own last
-    reading implied, to the account's target retirement year. That rate is
-    clamped to `settings().retirement_growth_cap` either way first: one noisy
-    early reading — a few good months read as an annualised 25%+ — compounded
-    across decades otherwise turns a four-figure pot into a "rough estimate"
-    in the millions, which is not rough, it's wrong.
+    Compounds the latest valuation forward to the account's target retirement
+    year, at `account.assumed_growth_rate` when the household has set one, or
+    otherwise the growth rate its own last reading implied. The observed rate
+    is the household's fallback, not its preference: it is worked out from the
+    raw change in the pot's value, which for a `still_contributing` account
+    blends market return with new money going in, so `assumed_growth_rate`
+    exists to let the household override that blend with a rate they actually
+    believe. Either way it is clamped to `settings().retirement_growth_cap`
+    first: one noisy figure — a few good months read as an annualised 25%+, or
+    a fat-fingered override — compounded across decades otherwise turns a
+    four-figure pot into a "rough estimate" in the millions, which is not
+    rough, it's wrong.
 
     None without enough to go on: no target year set, no current figure, no
-    growth rate to compound (the very first valuation never has one), or a
-    target year already reached.
+    rate to compound (no override, and the very first valuation never has a
+    growth rate of its own), or a target year already reached.
     """
     if account.target_retirement_year is None:
         return None
-    if latest is None or latest.current_pence is None or latest.year_growth is None:
+    if latest is None or latest.current_pence is None:
+        return None
+    rate = (
+        account.assumed_growth_rate
+        if account.assumed_growth_rate is not None
+        else latest.year_growth
+    )
+    if rate is None:
         return None
     years = account.target_retirement_year - today.year
     if years <= 0:
         return None
     cap = settings().retirement_growth_cap
-    rate = max(-cap, min(cap, latest.year_growth))
+    rate = max(-cap, min(cap, rate))
     return round(latest.current_pence * (1 + rate) ** years)
 
 

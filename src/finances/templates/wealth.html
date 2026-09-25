@@ -55,6 +55,13 @@
       {% if latest and latest.year_growth is not none %}
       <tr><td>Year growth</td><td class="num">{{ '%.2f' | format(latest.year_growth * 100) }}%</td></tr>
       {% endif %}
+      {% if account.assumed_growth_rate is not none %}
+      <tr>
+        <td>Assumed growth</td>
+        <td class="num">{{ '%.2f' | format(account.assumed_growth_rate * 100) }}%
+          <br><span class="muted">used for the projection instead of year growth</span></td>
+      </tr>
+      {% endif %}
       <tr>
         <td>As of</td>
         <td class="num">
@@ -127,6 +134,12 @@
           <label>Target retirement year</label>
           <input type="number" name="target_retirement_year" step="1"
                  value="{{ account.target_retirement_year or '' }}" placeholder="e.g. 2051">
+        </div>
+        <div class="field">
+          <label>Assumed growth % (overrides year growth in the projection)</label>
+          <input type="number" name="assumed_growth_rate" step="0.1" inputmode="decimal"
+                 value="{{ (account.assumed_growth_rate * 100) if account.assumed_growth_rate is not none else '' }}"
+                 placeholder="e.g. 5">
         </div>
         <div class="field">
           <label>Notes</label>

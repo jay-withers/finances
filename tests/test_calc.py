@@ -162,16 +162,38 @@ def test_annualised_growth_scales_a_short_gap_up_to_a_year(today: date):
     """A ratio comparable across snapshots however far apart they land.
 
     Doubled in exactly half a year is a much faster rate than doubled over a
-    full one, so the same 2x move must annualise to a bigger number.
+    full one, so the same 2x move must annualise to a bigger number. With
+    only one prior reading to compare against, this is the same as the old
+    immediately-previous behaviour.
     """
     six_months_ago = WealthSnapshot(account_id="a", as_of=date(2026, 3, 20), current_pence=1_000)
     a_year_ago = WealthSnapshot(account_id="a", as_of=date(2025, 9, 20), current_pence=1_000)
 
-    fast = calc.annualised_growth(six_months_ago, 2_000, today)
-    slow = calc.annualised_growth(a_year_ago, 2_000, today)
+    fast = calc.annualised_growth([six_months_ago], 2_000, today)
+    slow = calc.annualised_growth([a_year_ago], 2_000, today)
 
     assert fast > slow
     assert slow == pytest.approx(1.0, abs=0.01)  # doubling in ~a year is ~100%
+
+
+def test_annualised_growth_prefers_the_reading_closest_to_a_year_back(today: date):
+    """A household with more than a year of quarterly snapshots should not
+    have its rate driven by just the latest, noisiest quarter.
+
+    The pot sat flat at 1,900 for nine months, then rose to 2,000 in the
+    final quarter alone — a true ~5% move for the year. Measured against
+    only the last quarter, that same rise gets raised to roughly the fourth
+    power annualising it, and reads as a much bigger rate than the account
+    actually grew by over the year.
+    """
+    a_year_ago = WealthSnapshot(account_id="a", as_of=date(2025, 9, 20), current_pence=1_900)
+    last_quarter = WealthSnapshot(account_id="a", as_of=date(2026, 6, 25), current_pence=1_900)
+
+    from_last_quarter_alone = calc.annualised_growth([last_quarter], 2_000, today)
+    using_full_history = calc.annualised_growth([a_year_ago, last_quarter], 2_000, today)
+
+    assert using_full_history == pytest.approx(0.0527, abs=0.005)
+    assert from_last_quarter_alone > using_full_history
 
 
 def test_annualised_growth_is_none_without_a_comparable_previous_figure(today: date):
@@ -179,10 +201,10 @@ def test_annualised_growth_is_none_without_a_comparable_previous_figure(today: d
     was_worthless = WealthSnapshot(account_id="a", as_of=date(2025, 1, 1), current_pence=0)
     same_day = WealthSnapshot(account_id="a", as_of=today, current_pence=1_000)
 
-    assert calc.annualised_growth(None, 1_000, today) is None
-    assert calc.annualised_growth(never_valued, 1_000, today) is None
-    assert calc.annualised_growth(was_worthless, 1_000, today) is None
-    assert calc.annualised_growth(same_day, 1_000, today) is None
+    assert calc.annualised_growth([], 1_000, today) is None
+    assert calc.annualised_growth([never_valued], 1_000, today) is None
+    assert calc.annualised_growth([was_worthless], 1_000, today) is None
+    assert calc.annualised_growth([same_day], 1_000, today) is None
 
 
 def test_valuation_change_covers_the_full_tracked_history():
@@ -239,6 +261,50 @@ def test_projected_retirement_value_clamps_an_extreme_growth_rate(today: date, o
     cap = settings().retirement_growth_cap
     capped_rate = cap if observed_growth > 0 else -cap
     assert projected == round(1_000_00 * (1 + capped_rate) ** 20)
+
+
+def test_projected_retirement_value_prefers_an_assumed_rate_over_the_observed_one(today: date):
+    """The observed rate blends market return with contributions landing on top
+    of it; the override is how a household says "ignore that, assume X%"."""
+    account = WealthAccount(
+        company="A Fund", target_retirement_year=today.year + 10, assumed_growth_rate=0.04
+    )
+    latest = WealthSnapshot(
+        account_id=account.id, as_of=today, current_pence=1_000_00, year_growth=0.09
+    )
+
+    projected = calc.projected_retirement_value(account, latest, today)
+
+    assert projected == round(1_000_00 * 1.04**10)
+
+
+def test_projected_retirement_value_uses_the_assumed_rate_without_any_observed_growth(
+    today: date,
+):
+    """A first-ever valuation has no `year_growth` of its own, but an assumed
+    rate needs no history to compound from."""
+    account = WealthAccount(
+        company="A Fund", target_retirement_year=today.year + 10, assumed_growth_rate=0.04
+    )
+    latest = WealthSnapshot(account_id=account.id, as_of=today, current_pence=1_000_00)
+
+    projected = calc.projected_retirement_value(account, latest, today)
+
+    assert projected == round(1_000_00 * 1.04**10)
+
+
+def test_projected_retirement_value_clamps_an_extreme_assumed_rate(today: date):
+    """The cap guards against a fat-fingered override the same way it guards
+    against a noisy observed reading."""
+    account = WealthAccount(
+        company="A Fund", target_retirement_year=today.year + 20, assumed_growth_rate=0.63
+    )
+    latest = WealthSnapshot(account_id=account.id, as_of=today, current_pence=1_000_00)
+
+    projected = calc.projected_retirement_value(account, latest, today)
+
+    cap = settings().retirement_growth_cap
+    assert projected == round(1_000_00 * (1 + cap) ** 20)
 
 
 @pytest.mark.parametrize(
