@@ -1,4 +1,4 @@
-"""The monthly reminder digest: what the calendar reminders used to do.
+"""The weekly reminder digest: what the calendar reminders used to do.
 
 Composed from exactly the same `calc.attention()` the dashboard renders, so the
 email can never tell a different story from the app it links to.
