@@ -426,6 +426,32 @@ def pot_add(name: str = Form(...), monthly: str = Form(default="")) -> Any:
     return _back("/pots")
 
 
+@router.post("/pots/{pot_id}/move", include_in_schema=False)
+def pot_move(pot_id: str, direction: str = Form(...)) -> Any:
+    """Move a pot up or down among the other non-archived pots.
+
+    Payday's pot list is `doc.pots` filtered, not its own order (see
+    `calc.payday_pots`), so reordering here reorders payday too for free.
+    """
+
+    def change(doc: Document) -> Document:
+        visible = [p.id for p in doc.pots if not p.archived]
+        if pot_id not in visible:
+            return doc
+        i = visible.index(pot_id)
+        j = i - 1 if direction == "up" else i + 1
+        if not (0 <= j < len(visible)):
+            return doc
+        other_id = visible[j]
+        idx_a = next(k for k, p in enumerate(doc.pots) if p.id == pot_id)
+        idx_b = next(k for k, p in enumerate(doc.pots) if p.id == other_id)
+        doc.pots[idx_a], doc.pots[idx_b] = doc.pots[idx_b], doc.pots[idx_a]
+        return doc
+
+    _apply(change)
+    return _back("/pots")
+
+
 @router.post("/pots/{pot_id}/edit", include_in_schema=False)
 def pot_edit(
     pot_id: str,

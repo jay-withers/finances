@@ -191,6 +191,22 @@ def test_unchecking_counts_toward_payday_removes_it_from_the_run(client, stored)
     assert "Car" not in [p.name for p in calc.payday_pots(reload())]
 
 
+def test_reordering_pots_also_reorders_payday(client, stored):
+    car = pot_named(stored, "Car")
+
+    client.post(f"/pots/{car.id}/move", data={"direction": "up"})
+
+    after = reload()
+    assert [p.name for p in after.pots] == ["Car", "Holidays", "Savings"]
+    assert [p.name for p in calc.payday_pots(after)] == ["Car", "Holidays"]
+
+
+def test_moving_the_first_pot_up_is_a_no_op(client, stored):
+    holidays = pot_named(stored, "Holidays")
+    client.post(f"/pots/{holidays.id}/move", data={"direction": "up"})
+    assert [p.name for p in reload().pots] == ["Holidays", "Car", "Savings"]
+
+
 def test_unknown_pot_redirects_rather_than_500s(client):
     assert client.get("/pots/nope").status_code == 200
 

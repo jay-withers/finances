@@ -4,7 +4,7 @@
 
 <table>
   <thead>
-    <tr><th>Pot</th><th class="num">Monthly</th><th class="num">Balance</th></tr>
+    <tr><th>Pot</th><th class="num">Monthly</th><th class="num">Balance</th><th></th></tr>
   </thead>
   <tbody>
   {% for pot in doc.pots if not pot.archived %}
@@ -14,13 +14,23 @@
         {% if pot.counts_toward_payday %}{{ pot.monthly_pence | money }}{% else %}&mdash;{% endif %}
       </td>
       <td class="num {{ 'neg' if balances[pot.id] < 0 }}">{{ balances[pot.id] | money }}</td>
+      <td class="shrink">
+        <form method="post" action="/pots/{{ pot.id }}/move" class="inline-form">
+          <input type="hidden" name="direction" value="up">
+          <button class="tiny" type="submit"{{ ' disabled' if loop.first }}>&uarr;</button>
+        </form>
+        <form method="post" action="/pots/{{ pot.id }}/move" class="inline-form">
+          <input type="hidden" name="direction" value="down">
+          <button class="tiny" type="submit"{{ ' disabled' if loop.last }}>&darr;</button>
+        </form>
+      </td>
     </tr>
   {% else %}
-    <tr><td colspan="3" class="muted">No pots yet.</td></tr>
+    <tr><td colspan="4" class="muted">No pots yet.</td></tr>
   {% endfor %}
   </tbody>
   <tfoot>
-    <tr><th>Total</th><th class="num">{{ monthly_total | money }}</th><th class="num">{{ pots_total | money }}</th></tr>
+    <tr><th>Total</th><th class="num">{{ monthly_total | money }}</th><th class="num">{{ pots_total | money }}</th><th></th></tr>
   </tfoot>
 </table>
 

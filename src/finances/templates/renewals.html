@@ -97,9 +97,7 @@
         <label>Note</label>
         <input type="text" name="comment" value="{{ renewal.comment }}">
       </div>
-      <div class="row">
-        <button type="submit">Save</button>
-      </div>
+      <button type="submit">Save</button>
     </form>
     <form method="post" action="/renewals/{{ renewal.id }}/delete">
       <button class="ghost" type="submit">Delete {{ renewal.kind }}</button>
