@@ -419,3 +419,47 @@ def test_entries_for_ignores_other_pots(doc: Document):
     assert len(doc.entries_for(holidays.id)) == 1
     # And a stray entry cannot inflate a total.
     assert calc.pots_total(doc) == 127_500 - 10_000 + 630_000
+
+
+def test_recent_movements_windows_and_collapses_payday(today: date):
+    doc = Document()
+    doc.pots = [Pot(id="a", name="Car"), Pot(id="b", name="Ted")]
+    e = lambda pot, on, amt, kind="deposit", note="": PotEntry(  # noqa: E731
+        pot_id=pot, on=on, amount_pence=amt, kind=kind, note=note
+    )
+    doc.pot_entries = [
+        e("a", date(2026, 9, 14), -500, "spend", "old"),  # 6 days back: in
+        e("a", date(2026, 9, 13), -900, "spend"),  # 7 days back: out
+        e("a", date(2026, 9, 20), -1000, "spend", "tyres"),
+        e("a", date(2026, 9, 18), 2500, "payday"),
+        e("b", date(2026, 9, 18), 1000, "payday"),
+        e("b", date(2026, 9, 19), 100, "opening"),
+        e("b", date(2026, 9, 21), 100),  # future: out
+    ]
+
+    moves = calc.recent_movements(doc, today)
+
+    assert [(m.label, m.amount_pence) for m in moves] == [
+        ("Car · tyres", -1000),
+        ("Payday · 2 pots", 3500),
+        ("Car · old", -500),
+    ]
+
+
+def test_recent_movements_includes_valuations_and_empty_paydays(today: date):
+    doc = Document()
+    doc.wealth_accounts = [WealthAccount(id="w", company="Aviva")]
+    snap = lambda on, cur: WealthSnapshot(account_id="w", as_of=on, current_pence=cur)  # noqa: E731
+    doc.wealth_snapshots = [
+        snap(date(2026, 6, 1), 100_000),
+        snap(date(2026, 9, 19), 110_000),
+        WealthSnapshot(account_id="w", as_of=date(2026, 9, 20), yearly_projection_pence=5),
+    ]
+    doc.payday_runs = [PaydayRun(month="2026-09", run_on=date(2026, 9, 18))]
+
+    moves = calc.recent_movements(doc, today)
+
+    assert [(m.label, m.amount_pence) for m in moves] == [
+        ("Aviva · valuation", 10_000),
+        ("Payday · nothing moved", 0),
+    ]
