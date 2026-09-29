@@ -7,7 +7,7 @@ from datetime import date
 import pytest
 
 from finances import digest, mailer
-from finances.model import Document, PaydayRun, Pot, Renewal
+from finances.model import Document, PaydayRun, Pot, PotEntry, Renewal
 
 
 class FakeResponse:
@@ -186,3 +186,25 @@ def test_run_logs_a_line_on_every_run(stored, monkeypatch, caplog):
 def test_run_never_raises(stored, monkeypatch, status):
     monkeypatch.setattr(digest, "send", lambda *_a, **_k: mailer.MailResult(status=status))
     assert digest.run(today=date(2026, 9, 20)).status == status
+
+
+def test_digest_lists_the_last_7_days_of_movements(today: date):
+    document = Document()
+    document.pots = [Pot(id="a", name="Car <b>")]
+    document.pot_entries = [
+        PotEntry(pot_id="a", on=today, amount_pence=-1000, kind="spend", note="tyres"),
+        PotEntry(pot_id="a", on=date(2026, 1, 1), amount_pence=-5, kind="spend", note="ancient"),
+    ]
+
+    composed = digest.compose(document, today)
+
+    assert "Last 7 days" in composed.text
+    assert "Car <b> · tyres  -£10" in composed.text
+    assert "ancient" not in composed.text
+    assert "Car &lt;b&gt; · tyres" in composed.html
+
+
+def test_a_week_with_no_movement_says_so(today: date):
+    composed = digest.compose(Document(), today)
+    assert "No money moved." in composed.text
+    assert "No money moved." in composed.html
