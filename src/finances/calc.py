@@ -15,7 +15,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 
-from .model import Document, Pot, Renewal, WealthAccount, WealthSnapshot
+from .model import Document, Pot, PotEntry, Renewal, WealthAccount, WealthSnapshot
 from .settings import settings
 
 
@@ -83,6 +83,70 @@ def household_payday(today: date) -> date:
 
 
 # --- the monthly picture ------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Movement:
+    """One line of the recent-activity list: a single entry, or a whole payday.
+
+    A payday run writes one entry per pot on the same date; listing them
+    separately would bury everything else, so they collapse into one line.
+    """
+
+    on: date
+    label: str
+    amount_pence: int
+    href: str
+
+
+def recent_movements(doc: Document, today: date, days: int = 7) -> list[Movement]:
+    """Money moved over the last `days` days, newest first: pot entries, payday
+    runs, and pension valuations (as the change since the previous one).
+
+    Goes by the entry's own `on` date, not when it was typed in, so a backdated
+    entry lands where it belongs. `opening` entries are imports, not movement.
+    """
+    since = today - timedelta(days=days - 1)
+    names = {p.id: p.name for p in doc.pots}
+    moves: list[Movement] = []
+    paydays: dict[date, list[PotEntry]] = {}
+
+    for entry in doc.pot_entries:
+        if entry.kind == "opening" or not since <= entry.on <= today:
+            continue
+        if entry.kind == "payday":
+            paydays.setdefault(entry.on, []).append(entry)
+            continue
+        pot = names.get(entry.pot_id, "Deleted pot")
+        label = f"{pot} \u00b7 {entry.note}" if entry.note else pot
+        moves.append(Movement(entry.on, label, entry.amount_pence, f"/pots/{entry.pot_id}"))
+
+    for on, entries in paydays.items():
+        count = len(entries)
+        label = f"Payday \u00b7 {count} pot{'' if count == 1 else 's'}"
+        moves.append(Movement(on, label, sum(e.amount_pence for e in entries), "/payday"))
+
+    # A run where every pot sat the month out leaves no entries to collapse, but
+    # it still happened, and the dashboard's "not yet run" nag clears because of it.
+    for run in doc.payday_runs:
+        if not run.entry_ids and since <= run.run_on <= today:
+            moves.append(Movement(run.run_on, "Payday \u00b7 nothing moved", 0, "/payday"))
+
+    for account in doc.wealth_accounts:
+        history = doc.snapshots_for(account.id)  # newest first
+        for i, snap in enumerate(history):
+            if snap.current_pence is None or not since <= snap.as_of <= today:
+                continue
+            earlier = next((s for s in history[i + 1 :] if s.current_pence is not None), None)
+            if earlier is None:
+                label = f"{account.company} \u00b7 first valuation"
+                moves.append(Movement(snap.as_of, label, snap.current_pence, "/wealth"))
+            else:
+                label = f"{account.company} \u00b7 valuation"
+                change = snap.current_pence - earlier.current_pence
+                moves.append(Movement(snap.as_of, label, change, "/wealth"))
+
+    return sorted(moves, key=lambda m: m.on, reverse=True)
 
 
 @dataclass(frozen=True)

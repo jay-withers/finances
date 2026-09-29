@@ -249,6 +249,7 @@ def index(request: Request) -> Any:
             "doc": doc,
             "today": today,
             "attention": calc.attention(doc, today),
+            "recent": calc.recent_movements(doc, today),
             "pots_total": calc.pots_total(doc),
             "wealth_total": calc.wealth_total(doc),
         },

@@ -26,6 +26,21 @@
   <p class="muted">{{ attention.quiet_renewals }} other renewal{{ '' if attention.quiet_renewals == 1 else 's' }} further out.</p>
 {% endif %}
 
+<h2>Last 7 days</h2>
+<table>
+  <tbody>
+  {% for m in recent %}
+    <tr>
+      <td class="shrink muted">{{ m.on.strftime('%-d %b') }}</td>
+      <td><a href="{{ m.href }}" style="color:inherit;text-decoration:none">{{ m.label }}</a></td>
+      <td class="num {{ 'neg' if m.amount_pence < 0 }}">{{ m.amount_pence | money }}</td>
+    </tr>
+  {% else %}
+    <tr><td class="muted">No money moved in the last 7 days.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+
 <h2><a href="/pots" style="color:inherit;text-decoration:none">Savings &middot; {{ pots_total | money }}</a></h2>
 
 {% if doc.wealth_accounts %}
