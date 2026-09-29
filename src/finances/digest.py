@@ -36,6 +36,7 @@ def compose(doc: Document, today: date, app_url: str = "") -> Digest:
     """Build the email. Pure — takes a document, returns text."""
     state = calc.attention(doc, today)
     totals = calc.summary(doc)
+    recent = calc.recent_movements(doc, today)
 
     if state.items:
         subject = f"Finances — {len(state.items)} thing(s) need attention"
@@ -60,6 +61,15 @@ def compose(doc: Document, today: date, app_url: str = "") -> Digest:
         )
     lines.append("")
 
+    lines.append("Last 7 days")
+    lines.append("-----------")
+    if recent:
+        for move in recent:
+            lines.append(f"  {move.on:%-d %b}  {move.label}  {format_money(move.amount_pence)}")
+    else:
+        lines.append("  No money moved.")
+    lines.append("")
+
     lines.append("This month")
     lines.append("----------")
     lines.append(f"  In        {format_money(totals.income)}")
@@ -76,7 +86,7 @@ def compose(doc: Document, today: date, app_url: str = "") -> Digest:
     return Digest(
         subject=subject,
         text=text,
-        html=_html(state, totals, doc, today, app_url),
+        html=_html(state, totals, recent, doc, today, app_url),
         item_count=len(state.items),
     )
 
@@ -84,6 +94,7 @@ def compose(doc: Document, today: date, app_url: str = "") -> Digest:
 def _html(
     state: calc.Attention,
     totals: calc.Summary,
+    recent: list[calc.Movement],
     doc: Document,
     today: date,
     app_url: str,
@@ -127,6 +138,18 @@ def _html(
         )
     )
 
+    recent_rows = (
+        "".join(
+            f'<tr><td style="padding:2px 12px 2px 0;color:#666">{move.on:%-d %b}</td>'
+            f'<td style="padding:2px 12px 2px 0">{escape(move.label)}</td>'
+            f'<td style="padding:2px 0;text-align:right;'
+            f'color:{"#b3261e" if move.amount_pence < 0 else "#1a1a1a"}">'
+            f"{format_money(move.amount_pence)}</td></tr>"
+            for move in recent
+        )
+        or '<tr><td style="color:#666">No money moved.</td></tr>'
+    )
+
     link = (
         f'<p><a href="{escape(app_url)}" style="color:#1a73e8">Open the app</a></p>'
         if app_url
@@ -138,6 +161,8 @@ def _html(
         'font-size:15px;line-height:1.5;color:#1a1a1a;max-width:520px">'
         f'<p style="color:#666">As of {today:%A %-d %B %Y}.</p>'
         f"{body}"
+        f'<h3 style="margin-top:24px;font-size:15px">Last 7 days</h3>'
+        f'<table style="border-collapse:collapse">{recent_rows}</table>'
         f'<h3 style="margin-top:24px;font-size:15px">This month</h3>'
         f'<table style="border-collapse:collapse">{summary_rows}</table>'
         f"{link}"
