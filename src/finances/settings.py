@@ -87,10 +87,11 @@ class Settings(BaseSettings):
 
     # --- the reminder digest --------------------------------------------------
 
-    # Resend requires a verified sender domain. onboarding@resend.dev works
-    # without one but only delivers to the account owner's own address, which is
-    # exactly this use case.
-    digest_email_from: str = "Finances <onboarding@resend.dev>"
+    # Resend only delivers to anyone but the account owner from a verified
+    # domain; the shared onboarding@resend.dev sender 403s for any other
+    # recipient. jaywithers.uk is verified in Resend. Not a secret, and not a
+    # personal mailbox, so it is fine to commit.
+    digest_email_from: str = "Finances <finances@jaywithers.uk>"
 
     # A renewal inside this many days is "due" on the dashboard and in the
     # digest. Per-renewal `notice_days` overrides it — a mortgage wants longer
