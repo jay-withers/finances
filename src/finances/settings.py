@@ -89,10 +89,10 @@ class Settings(BaseSettings):
 
     # Resend only delivers to anyone but the account owner from a verified
     # domain; the shared onboarding@resend.dev sender 403s for any other
-    # recipient. The verified domain is send.jaywithers.uk, and the sender has
+    # recipient. The verified domain is finances.jaywithers.uk, and the sender has
     # to be on exactly that — the root domain is not verified. Not a secret, and
     # not a personal mailbox, so it is fine to commit.
-    digest_email_from: str = "Finances <finances@send.jaywithers.uk>"
+    digest_email_from: str = "Finances <finances@finances.jaywithers.uk>"
 
     # A renewal inside this many days is "due" on the dashboard and in the
     # digest. Per-renewal `notice_days` overrides it — a mortgage wants longer
