@@ -52,7 +52,7 @@
 <h2>Money out</h2>
 <table>
   <tbody>
-  {% for line in doc.outgoings %}
+  {% for line in doc.outgoings | sort(attribute="amount_pence", reverse=true) %}
     <tr class="{{ '' if line.active else 'dim' }}">
       <td><input class="inline" type="text" name="name_{{ line.id }}" value="{{ line.name }}"></td>
       <td class="num" style="width:32%">
