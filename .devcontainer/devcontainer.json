@@ -1,6 +1,6 @@
 {
   "name": "finances",
-  "image": "ghcr.io/jay-withers/dev-containers/terraform:v0.16.1@sha256:6a9007276d45727c77e6d3817d112bac9a6530350355a716ada614aaa7f0e3c6",
+  "image": "ghcr.io/jay-withers/dev-containers/terraform:v0.16.3@sha256:87148c9791be1df700069aacb0a163ed2915117f79aa1d83ad07c100223230b7",
   "mounts": [
     "source=${localEnv:HOME}/Git,target=/Users/jay/Git,type=bind",
     // hadolint runs as a container, so the pre-commit hook needs the daemon.
