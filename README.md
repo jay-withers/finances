@@ -13,7 +13,7 @@ It exists to make three recurring jobs quicker and harder to forget:
   have gone stale.
 
 The dashboard shows what needs attention right now; a scheduled job emails the
-same list once a month.
+same list every Sunday evening.
 
 ## Running it locally
 
@@ -69,7 +69,7 @@ migration time they had drifted £28 apart.
 | `src/finances/money.py` | Pence in, formatted strings out |
 | `src/finances/store.py` | Blob load/save, with an ETag precondition |
 | `src/finances/importer.py` | The one-off spreadsheet migration |
-| `src/finances/digest.py` | The monthly reminder email |
+| `src/finances/digest.py` | The weekly reminder email |
 | `src/finances/api/` | Routes, the passcode gate, the app |
 | `terraform/` | The infrastructure — see [its README](terraform/README.md) |
 
