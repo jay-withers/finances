@@ -19,4 +19,4 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
-    uses: jay-withers/workflows/.github/workflows/terraform.yml@6599cdd2b3f2870119a2de439360471b2b94765e # v1.4.11
+    uses: jay-withers/workflows/.github/workflows/terraform.yml@fb1c41960759020f9425e1351bf3cd893143d657 # v1.4.14
