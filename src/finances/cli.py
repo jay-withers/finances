@@ -75,7 +75,9 @@ def main(argv: list[str] | None = None) -> int:
     # Binds every interface because the container is the boundary: Container
     # Apps routes to the replica's own address, and 127.0.0.1 would be
     # unreachable from ingress.
-    serve.add_argument("--host", default="0.0.0.0")
+    # S104: binds all interfaces on purpose: Container Apps ingress reaches the container over the
+    # pod network, and 127.0.0.1 would be unreachable.
+    serve.add_argument("--host", default="0.0.0.0")  # noqa: S104
     serve.add_argument("--port", type=int, default=8000)
     serve.add_argument("--reload", action="store_true", help="reload on edit, for local work")
 

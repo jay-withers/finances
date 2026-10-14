@@ -466,7 +466,9 @@ def attention(doc: Document, today: date) -> Attention:
 
     for renewal in due_renewals(doc, today):
         days = days_until(renewal, today)
-        assert days is not None  # is_due() is false for a renewal with no date
+        # S101: type narrowing only; is_due() is false for a renewal with no date, so -O stripping
+        # it changes nothing.
+        assert days is not None  # noqa: S101
         if days < 0:
             detail = f"expired {-days} days ago"
         elif days == 0:
