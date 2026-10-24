@@ -178,9 +178,16 @@ resource "azurerm_container_app_custom_domain" "this" {
   # bind operation needs the certificate id in the request and the provider has
   # no field to put it in (hashicorp/terraform-provider-azurerm#27362, open).
   # Until it lands, `make bind-domain` is the manual step after any apply that
-  # recreates either of these two resources. A plan afterwards reports no diff,
-  # because the CLI sets the same binding type this resource already declares.
+  # recreates either of these two resources.
+  #
+  # The bind leaves the domain at `SniEnabled`, so both binding arguments are
+  # ignored — the provider's documented pattern for managed certificates, and
+  # career's. Without it every plan proposes *replacing* the domain back to
+  # `Disabled`, which cd-terraform would then apply, unbinding the certificate.
   #
   # gym-log and market-agent hit and confirmed all of this first; the workaround
   # is the same in both.
+  lifecycle {
+    ignore_changes = [certificate_binding_type, container_app_environment_certificate_id]
+  }
 }
