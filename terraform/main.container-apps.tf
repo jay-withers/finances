@@ -9,6 +9,13 @@ resource "azurerm_container_app" "this" {
   container_app_environment_id = data.azurerm_container_app_environment.platform.id
   resource_group_name          = azurerm_resource_group.this.name
 
+  # The shared environment is Consumption-only. Stated explicitly rather than
+  # left to the provider default, because the API reports it back and leaving
+  # it unset made every plan propose clearing it, which, now that any planned
+  # change needs approval, blocked every Terraform PR. gym-log and career set
+  # it the same way.
+  workload_profile_name = "Consumption"
+
   # No `location` argument: a container app inherits its environment's region
   # and the provider rejects the argument outright. Jobs are the exception that
   # must state it — see main.container-apps-jobs.tf.
