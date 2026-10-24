@@ -111,14 +111,11 @@ resource "azurerm_role_assignment" "identity_state_contributor" {
   principal_type = "ServicePrincipal"
 }
 
-# Whoever applies can read and edit the document by hand — which is what
+# The administrators can read and edit the document by hand — which is what
 # `finances import` and `finances show` do, running locally against the real
 # blob.
 resource "azurerm_role_assignment" "deployer_state_contributor" {
-  for_each = toset(concat(
-    [data.azurerm_client_config.current.object_id],
-    var.key_vault_administrator_object_ids,
-  ))
+  for_each = toset(var.key_vault_administrator_object_ids)
 
   scope                = local.state_container_scope
   role_definition_name = "Storage Blob Data Contributor"
