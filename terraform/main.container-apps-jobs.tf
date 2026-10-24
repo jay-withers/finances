@@ -12,6 +12,13 @@ resource "azurerm_container_app_job" "digest" {
   name                         = module.naming_digest.container_app_job.name
   container_app_environment_id = data.azurerm_container_app_environment.platform.id
   resource_group_name          = azurerm_resource_group.this.name
+
+  # The shared environment is Consumption-only. Stated explicitly rather than
+  # left to the provider default, because the API reports it back and leaving
+  # it unset made every plan propose clearing it, which, now that any planned
+  # change needs approval, blocked every Terraform PR. gym-log and career set
+  # it the same way.
+  workload_profile_name = "Consumption"
   # Unlike a container app, a job **requires** location and the provider rejects
   # it being omitted. Same region as the environment either way.
   location = azurerm_resource_group.this.location
