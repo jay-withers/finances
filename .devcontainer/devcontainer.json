@@ -2,7 +2,9 @@
   "name": "finances",
   "image": "ghcr.io/jay-withers/dev-containers/terraform:v0.16.14@sha256:fa411d132c7f845dfa7474ab828e79606cccf0e36e44d290516699713b0e47b2",
   "mounts": [
-    "source=${localEnv:HOME}/Git,target=/Users/jay/Git,type=bind",
+    // The same source works on every host: Docker Desktop (macOS, Windows)
+    // resolves it inside its own VM. docker-socket-setup handles the ownership
+    // difference (a docker group on Linux, a root-owned socket on Desktop).
     // hadolint runs as a container, so the pre-commit hook needs the daemon.
     "source=/var/run/docker.sock,target=/var/run/docker.sock,type=bind"
   ],
