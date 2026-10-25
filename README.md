@@ -94,6 +94,16 @@ apply that recreated a workload — run `cd-publish` from the Actions tab with
 that tag. Running `make deploy` by hand is for anything else, such as a
 rollback.
 
+**Every deploy is smoke-tested, and a failed one rolls back.** Before deploying,
+the workflow records `make deployed-tag` (the tag on the app now). After it,
+`make smoke` (`scripts/smoke.sh`) checks that the app and the digest job are configured with
+the new tag, that the app's `/healthz` reports it as `version` on its default
+FQDN (allowing five minutes for a cold start), and that `/readyz` answers 200.
+If the deploy or the smoke test fails, the workflow redeploys the recorded tag,
+smoke-tests that, and fails the run, so a `deploy-failed` issue says whether
+dev is back on the old version. Rolling back moves the image only: a release
+must not change stored data in a way the previous version can't read.
+
 ```bash
 make deploy IMAGE_TAG=v0.2.0
 ```

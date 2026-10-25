@@ -22,6 +22,12 @@ def test_probes_are_outside_the_gate(anonymous):
     assert anonymous.get("/readyz").status_code == 200
 
 
+def test_healthz_reports_the_deployed_image_tag(anonymous, monkeypatch):
+    """`make smoke` reads this to prove the new revision is the one serving."""
+    monkeypatch.setenv("IMAGE_TAG", "v1.2.3")
+    assert anonymous.get("/healthz").json()["version"] == "v1.2.3"
+
+
 def test_readyz_reports_unavailable_when_storage_cannot_be_reached(anonymous, monkeypatch):
     from finances import store
 

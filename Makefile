@@ -10,7 +10,7 @@ IMAGE_TAG_EXPLICIT := $(filter-out file,$(origin IMAGE_TAG))
 
 .DEFAULT_GOAL := help
 
-.PHONY: help install lint test run seed import show digest build push deploy url logs secrets dns bind-domain init fmt validate plan apply
+.PHONY: help install lint test run seed import show digest build push deploy deployed-tag smoke url logs secrets dns bind-domain init fmt validate plan apply
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -108,6 +108,29 @@ deploy: ## Roll an image tag onto the app and the digest job (IMAGE_TAG required
 		--image $(IMAGE_REGISTRY)/finances:$(IMAGE_TAG) \
 		--set-env-vars IMAGE_TAG=$(IMAGE_TAG) \
 		STATE_CONTAINER_URL="$$(terraform -chdir=$(TF_DIR) output -raw state_container_url)"
+
+# What cd-publish rolls back to when a deploy fails its smoke test: the tag
+# on the app now, or nothing if it isn't one of this repo's images yet (a
+# fresh apply leaves Terraform's placeholder image).
+deployed-tag: ## Print the image tag live on the app
+	@terraform -chdir=$(TF_DIR) init -reconfigure -backend-config=backends/$(ENV).hcl >/dev/null
+	@az containerapp show \
+		--name "$$(terraform -chdir=$(TF_DIR) output -raw container_app_name)" \
+		--resource-group "$$(terraform -chdir=$(TF_DIR) output -raw resource_group_name)" \
+		--query 'properties.template.containers[0].image' -o tsv \
+		| sed -n 's|^$(IMAGE_REGISTRY)/finances:||p'
+
+# Run by cd-publish after every deploy (and by hand after a local one). A
+# failure there rolls back to `make deployed-tag`'s answer.
+smoke: ## Check IMAGE_TAG is live and ready on the app, and set on its job (IMAGE_TAG required)
+	@if [ -z "$(IMAGE_TAG_EXPLICIT)" ]; then \
+		echo "error: pass the tag to check, e.g. make smoke IMAGE_TAG=v0.1.0" >&2; exit 1; fi
+	@terraform -chdir=$(TF_DIR) init -reconfigure -backend-config=backends/$(ENV).hcl >/dev/null
+	scripts/smoke.sh $(IMAGE_TAG) \
+		"$$(terraform -chdir=$(TF_DIR) output -raw resource_group_name)" \
+		$(IMAGE_REGISTRY)/finances \
+		app:"$$(terraform -chdir=$(TF_DIR) output -raw container_app_name)" \
+		job:"$$(terraform -chdir=$(TF_DIR) output -raw digest_job_name)"
 
 url: ## Print the application's URL
 	@custom="$$(terraform -chdir=$(TF_DIR) output -raw custom_domain_url)"; \
