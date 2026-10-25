@@ -1,4 +1,4 @@
-"""One entrypoint — `finances serve|import|seed|show|digest`.
+"""One entrypoint — `finances serve|import|seed|show|digest|selfcheck`.
 
 `serve` is the web workload and `digest` is the scheduled job; both run in
 Azure from the same image, told apart only by the `args` Terraform sets.
@@ -105,6 +105,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     digest.add_argument("--url", default="", help="link to the app, included in the email")
 
+    sub.add_parser(
+        "selfcheck", help="check settings, secrets and storage as a job would, doing nothing"
+    )
+
     args = parser.parse_args(argv)
 
     _configure_logging()
@@ -123,6 +127,10 @@ def main(argv: list[str] | None = None) -> int:
             return _seed(args)
         if args.command == "digest":
             return _digest(args)
+        if args.command == "selfcheck":
+            from . import selfcheck
+
+            return selfcheck.run()
     finally:
         telemetry.flush()
 

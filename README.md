@@ -99,6 +99,9 @@ the workflow records `make deployed-tag` (the tag on the app now). After it,
 `make smoke` (`scripts/smoke.sh`) checks that the app and the digest job are configured with
 the new tag, that the app's `/healthz` reports it as `version` on its default
 FQDN (allowing five minutes for a cold start), and that `/readyz` answers 200.
+It then starts one run of each job with its args swapped for `finances selfcheck`,
+which checks the settings, secrets and storage a real run needs and does
+nothing else, and waits for each to succeed.
 If the deploy or the smoke test fails, the workflow redeploys the recorded tag,
 smoke-tests that, and fails the run, so a `deploy-failed` issue says whether
 dev is back on the old version. Rolling back moves the image only: a release
