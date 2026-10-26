@@ -1,6 +1,6 @@
 {
   "name": "finances",
-  "image": "ghcr.io/jay-withers/dev-containers/terraform:v0.17.2@sha256:17deffe2406145b67b1f5d4d75730bbfcb658e5abd38e2e0daa091e8dc281ca7",
+  "image": "ghcr.io/jay-withers/dev-containers/terraform:v0.17.5@sha256:dc3d6f1bcc99705b499262bd156a6dcc9d5c583063a256081ca1c5d6ef913b20",
   "mounts": [
     // The same source works on every host: Docker Desktop (macOS, Windows)
     // resolves it inside its own VM. docker-socket-setup handles the ownership
