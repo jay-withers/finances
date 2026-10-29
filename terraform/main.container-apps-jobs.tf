@@ -11,7 +11,7 @@
 resource "azurerm_container_app_job" "digest" {
   name                         = module.naming_digest.container_app_job.name
   container_app_environment_id = data.azurerm_container_app_environment.platform.id
-  resource_group_name          = azurerm_resource_group.this.name
+  resource_group_name          = data.azurerm_resource_group.this.name
 
   # The shared environment is Consumption-only. Stated explicitly rather than
   # left to the provider default, because the API reports it back and leaving
@@ -21,7 +21,7 @@ resource "azurerm_container_app_job" "digest" {
   workload_profile_name = "Consumption"
   # Unlike a container app, a job **requires** location and the provider rejects
   # it being omitted. Same region as the environment either way.
-  location = azurerm_resource_group.this.location
+  location = data.azurerm_resource_group.this.location
 
   # Ten minutes against a run that reads one blob and makes one HTTPS call. The
   # bound is there to stop a hung request holding a replica open, not because

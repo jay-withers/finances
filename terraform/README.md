@@ -21,7 +21,6 @@ Two consequences follow from that and are worth knowing before the first plan:
 
 | Resource | Why |
 |---|---|
-| Resource group | Everything below, in one place per environment |
 | Container app | The web application, scaled to zero |
 | Container app job | The weekly reminder digest, on a cron schedule |
 | User-assigned identity | How both workloads reach Key Vault and the document |
@@ -29,6 +28,10 @@ Two consequences follow from that and are worth knowing before the first plan:
 | Storage account + `state` container | The one JSON document that *is* the product |
 | Role assignments | The identity and the deployer, scoped to the container |
 | Managed certificate + custom domain | Only when `custom_domain_name` is set |
+
+The resource group is not here: github-repos creates it
+(`create_resource_groups`) and grants the pipeline Contributor and
+conditioned RBAC Administrator on it, and `data.tf` looks it up.
 
 Terraform creates **no `azurerm_key_vault_secret`**. No secret value belongs in
 source or in state, so the three secrets are set once by hand — `make secrets`
@@ -110,7 +113,6 @@ success — there is a variable validation and a Makefile guard against it.
 | [azurerm_container_app_environment_managed_certificate.this](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/container_app_environment_managed_certificate) | resource |
 | [azurerm_container_app_job.digest](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/container_app_job) | resource |
 | [azurerm_key_vault.this](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/key_vault) | resource |
-| [azurerm_resource_group.this](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/resource_group) | resource |
 | [azurerm_role_assignment.deployer_secrets_officer](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/role_assignment) | resource |
 | [azurerm_role_assignment.deployer_state_contributor](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/role_assignment) | resource |
 | [azurerm_role_assignment.identity_secrets_user](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/role_assignment) | resource |
@@ -121,6 +123,7 @@ success — there is a variable validation and a Makefile guard against it.
 | [azurerm_application_insights.platform](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/data-sources/application_insights) | data source |
 | [azurerm_client_config.current](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/data-sources/client_config) | data source |
 | [azurerm_container_app_environment.platform](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/data-sources/container_app_environment) | data source |
+| [azurerm_resource_group.this](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/data-sources/resource_group) | data source |
 
 ## Inputs
 

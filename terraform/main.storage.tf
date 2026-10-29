@@ -40,8 +40,8 @@ resource "azurerm_storage_account" "state" {
   # first — it did, on the first apply. See the identical note on the Key
   # Vault above.
   name                = module.naming.storage_account.name_unique
-  resource_group_name = azurerm_resource_group.this.name
-  location            = azurerm_resource_group.this.location
+  resource_group_name = data.azurerm_resource_group.this.name
+  location            = data.azurerm_resource_group.this.location
 
   account_tier             = "Standard"
   account_kind             = "StorageV2"

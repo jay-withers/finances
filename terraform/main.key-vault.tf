@@ -23,8 +23,8 @@ resource "azurerm_key_vault" "this" {
   # the first apply. The naming module's random suffix, generated once and
   # fixed in state from then on, is what makes this actually available.
   name                = module.naming.key_vault.name_unique
-  resource_group_name = azurerm_resource_group.this.name
-  location            = azurerm_resource_group.this.location
+  resource_group_name = data.azurerm_resource_group.this.name
+  location            = data.azurerm_resource_group.this.location
   tenant_id           = data.azurerm_client_config.current.tenant_id
   sku_name            = "standard"
 
