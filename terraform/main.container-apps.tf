@@ -7,7 +7,7 @@
 resource "azurerm_container_app" "this" {
   name                         = module.naming.container_app.name
   container_app_environment_id = data.azurerm_container_app_environment.platform.id
-  resource_group_name          = azurerm_resource_group.this.name
+  resource_group_name          = data.azurerm_resource_group.this.name
 
   # The shared environment is Consumption-only. Stated explicitly rather than
   # left to the provider default, because the API reports it back and leaving
