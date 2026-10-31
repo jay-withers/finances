@@ -40,14 +40,12 @@ prints the commands.
 ## First apply
 
 ```bash
-# Once per repository: the state container.
-az storage container create --name finances \
-  --account-name sttfsharedjw --auth-mode login
-
+# The state container comes from github-repos' state_consumers entry.
 make apply ENV=dev          # reads the plan; no -auto-approve
 make secrets                # prints the az keyvault commands to run
 make dns                    # prints the two DNS records the domain needs
-# create both records, wait for them to resolve, then:
+# add the app to jay-withers/cloudflare's app_domains, apply it there,
+# wait for both records to resolve, then:
 make apply ENV=dev          # issues the managed certificate
 make bind-domain            # the manual step the provider cannot do
 ```
