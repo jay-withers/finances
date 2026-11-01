@@ -79,6 +79,19 @@ resource "azurerm_storage_account" "state" {
   tags = local.tags
 }
 
+# prevent_destroy only guards against this configuration; the lock also stops a
+# portal click or a CLI delete, and covers everything inside the account. The
+# pipeline can create it (github-repos' Resource Lock Creator role) but not
+# remove it: that is github-repos' manual-remove-lock workflow, run by hand.
+# While it stands, deleting anything in the account through Azure Resource Manager
+# fails too, blob containers included.
+resource "azurerm_management_lock" "state" {
+  name       = "lock-${azurerm_storage_account.state.name}"
+  scope      = azurerm_storage_account.state.id
+  lock_level = "CanNotDelete"
+  notes      = "The finances document: years of pot and ledger history that cannot be rebuilt. Remove with github-repos' manual-remove-lock."
+}
+
 # tflint-ignore: azurerm_resources_missing_prevent_destroy
 resource "azurerm_storage_container" "state" {
   # The container itself carries no `prevent_destroy`: the account above already
