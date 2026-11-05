@@ -11,8 +11,8 @@ Two consequences follow from that and are worth knowing before the first plan:
 
 - **`terraform plan` needs Azure credentials**, because the data sources are
   resolved at plan time. A plan against an environment the platform has not
-  applied fails outright, which is why CI validates but never plans, and why
-  only `dev` exists here.
+  applied fails outright, which is why CI plans `dev` alone (as the pipeline
+  identity, in the `dev` GitHub environment) and why only `dev` exists here.
 - **The region is fixed.** A container app may sit in a different resource group
   from its environment but not a different region, so the resource group takes
   its location from the environment rather than from a variable.

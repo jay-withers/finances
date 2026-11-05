@@ -113,8 +113,8 @@ make deploy IMAGE_TAG=v0.2.0
 
 Images are published to `ghcr.io/jay-withers/finances` by `cd-tag` on every
 merge that touches the application, tagged with both the release version and
-the commit SHA and never with a moving tag. Rolling one onto Azure is a
-deliberate manual step, matching [gym-log][gym-log] and [market-agent][ma].
+the commit SHA and never with a moving tag, matching [gym-log][gym-log] and
+[market-agent][ma].
 
 See [terraform/README.md](terraform/README.md) for the first apply, the
 secrets, and the custom domain's manual binding step.
