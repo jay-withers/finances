@@ -663,8 +663,26 @@ def test_icon_and_favicon_are_the_same_bytes(client):
     assert client.get("/icon.svg").content == client.get("/favicon.ico").content
 
 
-def test_manifest_names_an_icon(client):
-    """An installable manifest with no icon is one Chrome declines to install."""
+def test_manifest_names_android_icons(client):
+    """Android Chrome installs from a raster icon of at least 192px, and wants a
+    separate maskable one for the launcher's own shape."""
     icons = client.get("/manifest.json").json()["icons"]
-    assert [i["src"] for i in icons] == ["/icon.svg"]
-    assert icons[0]["sizes"] == "any"
+    assert {(i["sizes"], i["purpose"]) for i in icons} == {
+        ("192x192", "any"),
+        ("512x512", "any"),
+        ("512x512", "maskable"),
+    }
+    assert all(i["type"] == "image/png" for i in icons)
+
+
+def test_manifest_icons_are_served_outside_the_gate(anonymous):
+    """The login page is where a fresh install starts, before any cookie."""
+    for icon in anonymous.get("/manifest.json").json()["icons"]:
+        response = anonymous.get(icon["src"])
+        assert response.status_code == 200, icon["src"]
+        assert response.headers["content-type"] == "image/png"
+        assert response.content.startswith(b"\x89PNG")
+
+
+def test_unknown_icon_is_a_404(anonymous):
+    assert anonymous.get("/icons/nope.png").status_code == 404
