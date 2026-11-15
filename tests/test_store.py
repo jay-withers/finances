@@ -66,6 +66,11 @@ def test_a_corrupt_document_raises_rather_than_starting_fresh():
         store.load()
 
 
+def test_a_local_save_returns_no_etag(doc):
+    """A local file has no ETag, and None is what callers read as "no etag"."""
+    assert store.save(doc) is None
+
+
 def test_a_local_write_is_atomic(doc):
     """Written via a temp file and renamed, so no stray temp file survives a write."""
     store.save(doc)

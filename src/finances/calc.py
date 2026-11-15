@@ -137,13 +137,15 @@ def recent_movements(doc: Document, today: date, days: int = 7) -> list[Movement
         for i, snap in enumerate(history):
             if snap.current_pence is None or not since <= snap.as_of <= today:
                 continue
-            earlier = next((s for s in history[i + 1 :] if s.current_pence is not None), None)
-            if earlier is None:
+            earlier_pence = next(
+                (s.current_pence for s in history[i + 1 :] if s.current_pence is not None), None
+            )
+            if earlier_pence is None:
                 label = f"{account.company} \u00b7 first valuation"
                 moves.append(Movement(snap.as_of, label, snap.current_pence, "/wealth"))
             else:
                 label = f"{account.company} \u00b7 valuation"
-                change = snap.current_pence - earlier.current_pence
+                change = snap.current_pence - earlier_pence
                 moves.append(Movement(snap.as_of, label, change, "/wealth"))
 
     return sorted(moves, key=lambda m: m.on, reverse=True)
@@ -283,6 +285,18 @@ class ValuationChange:
     since: date
 
 
+def valued_readings(snapshots: list[WealthSnapshot]) -> list[tuple[date, int]]:
+    """(as_of, current_pence) for the snapshots that have a current figure, oldest first.
+
+    `snapshots_for` includes rows recorded for the projection alone, with no
+    current figure; anything plotting or comparing valuations skips those.
+    """
+    return sorted(
+        ((s.as_of, s.current_pence) for s in snapshots if s.current_pence is not None),
+        key=lambda pair: pair[0],
+    )
+
+
 def valuation_change(snapshots: list[WealthSnapshot]) -> ValuationChange | None:
     """The change over the full tracked history, not just the latest step.
 
@@ -290,16 +304,14 @@ def valuation_change(snapshots: list[WealthSnapshot]) -> ValuationChange | None:
     earliest figure of zero or less, which a percentage change against is
     meaningless.
     """
-    valued = sorted((s for s in snapshots if s.current_pence is not None), key=lambda s: s.as_of)
+    valued = valued_readings(snapshots)
     if len(valued) < 2:
         return None
-    first, last = valued[0], valued[-1]
-    if first.current_pence <= 0:
+    (since, first_pence), (_, last_pence) = valued[0], valued[-1]
+    if first_pence <= 0:
         return None
-    delta = last.current_pence - first.current_pence
-    return ValuationChange(
-        amount_pence=delta, fraction=delta / first.current_pence, since=first.as_of
-    )
+    delta = last_pence - first_pence
+    return ValuationChange(amount_pence=delta, fraction=delta / first_pence, since=since)
 
 
 def annualised_growth(
@@ -324,17 +336,17 @@ def annualised_growth(
     the same day as `as_of` or later.
     """
     valued = [
-        s
+        (s.as_of, s.current_pence)
         for s in history
         if s.current_pence is not None and s.current_pence > 0 and s.as_of < as_of
     ]
     if not valued:
         return None
     target = as_of - timedelta(days=365)
-    previous = min(valued, key=lambda s: abs((s.as_of - target).days))
-    days = (as_of - previous.as_of).days
+    previous_on, previous_pence = min(valued, key=lambda pair: abs((pair[0] - target).days))
+    days = (as_of - previous_on).days
     years = days / 365.25
-    return (current_pence / previous.current_pence) ** (1 / years) - 1
+    return (current_pence / previous_pence) ** (1 / years) - 1
 
 
 def projected_retirement_value(

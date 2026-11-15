@@ -33,7 +33,11 @@ def parse_money(value: str | int | float | Decimal | None) -> int:
     """
     if value is None:
         return 0
-    if isinstance(value, int) and not isinstance(value, bool):
+    if isinstance(value, bool):
+        # A TRUE/FALSE cell. bool is an int, so this has to come first or
+        # True would read as £1; it's nonsense like any other, so fail the same way.
+        raise ValueError(f"not an amount: {value!r}")
+    if isinstance(value, int):
         return value * 100
 
     if isinstance(value, float):

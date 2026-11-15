@@ -11,7 +11,27 @@ from datetime import date
 import pytest
 
 from finances import calc, store
-from finances.model import Document
+from finances.model import Document, PaydayRun, WealthAccount, WealthSnapshot
+
+
+# Lookups that return None for "not there". In a test that expects it there,
+# fail on that line rather than with an AttributeError on the next.
+def _run(document: Document, month: str) -> PaydayRun:
+    run = document.payday_run_for(month)
+    assert run is not None, f"no payday run for {month}"
+    return run
+
+
+def _account(document: Document, account_id: str) -> WealthAccount:
+    account = document.account(account_id)
+    assert account is not None, f"no account {account_id}"
+    return account
+
+
+def _latest(document: Document, account_id: str) -> WealthSnapshot:
+    snapshot = document.latest_snapshot(account_id)
+    assert snapshot is not None, f"no snapshot for {account_id}"
+    return snapshot
 
 
 def reload() -> Document:
@@ -45,8 +65,7 @@ def test_payday_run_tops_up_every_pot(client, stored):
     assert balances[holidays.id] == 127_500 + 45_000
     assert balances[car.id] == -10_000 + 5_000
 
-    run = document.payday_run_for("2026-09")
-    assert run is not None
+    run = _run(document, "2026-09")
     assert run.run_on == date(2026, 9, 25)
     assert len(run.entry_ids) == 2
 
@@ -63,7 +82,7 @@ def test_payday_skips_a_pot_left_blank(client, stored):
 
     document = reload()
     assert calc.pot_balances(document)[car.id] == -10_000  # untouched
-    assert len(document.payday_run_for("2026-09").entry_ids) == 1
+    assert len(_run(document, "2026-09").entry_ids) == 1
 
 
 def test_payday_accepts_an_unusual_amount(client, stored):
@@ -100,7 +119,7 @@ def test_payday_zero_amount_is_treated_as_skipped(client, stored):
 
     document = reload()
     assert calc.pot_balances(document)[holidays.id] == 127_500  # untouched
-    assert document.payday_run_for("2026-09").entry_ids == []
+    assert _run(document, "2026-09").entry_ids == []
 
 
 def test_payday_transfer_amount_is_saved(client, stored):
@@ -161,10 +180,10 @@ def test_deleting_a_payday_entry_detaches_it_from_the_run(client, stored):
     """Otherwise re-running the month would try to remove an entry already gone."""
     holidays = pot_named(stored, "Holidays")
     client.post("/payday/run", data={"on": "2026-09-25", f"amount_{holidays.id}": "450"})
-    entry_id = reload().payday_run_for("2026-09").entry_ids[0]
+    entry_id = _run(reload(), "2026-09").entry_ids[0]
 
     client.post(f"/pots/{holidays.id}/entry/{entry_id}/delete")
-    assert reload().payday_run_for("2026-09").entry_ids == []
+    assert _run(reload(), "2026-09").entry_ids == []
 
     # And re-running still works.
     client.post("/payday/run", data={"on": "2026-09-25", f"amount_{holidays.id}": "450"})
@@ -347,7 +366,7 @@ def test_recording_a_valuation_appends_rather_than_replaces(client, stored):
 
     document = reload()
     assert len(document.snapshots_for(pension.id)) == before + 1
-    latest = document.latest_snapshot(pension.id)
+    latest = _latest(document, pension.id)
     assert latest.as_of == date(2026, 9, 20)
     assert latest.current_pence == 2_500_000
     # Worked out from the account's history rather than typed in.
@@ -451,7 +470,7 @@ def test_army_and_state_cannot_be_edited(client, stored):
     """There is exactly one of each; nothing about them is ever renamed."""
     army = next(a for a in stored.wealth_accounts if a.company == "Army")
     client.post(f"/wealth/accounts/{army.id}", data={"company": "Renamed"})
-    assert reload().account(army.id).company == "Army"
+    assert _account(reload(), army.id).company == "Army"
 
 
 def test_army_and_state_cannot_be_deleted(client, stored):
@@ -465,7 +484,7 @@ def test_army_and_state_still_take_new_valuations(client, stored):
     how its yearly projection gets updated over time."""
     army = next(a for a in stored.wealth_accounts if a.company == "Army")
     client.post(f"/wealth/{army.id}/snapshot", data={"as_of": "2026-09-20", "projection": "9000"})
-    latest = reload().latest_snapshot(army.id)
+    latest = _latest(reload(), army.id)
     assert latest.yearly_projection_pence == 900_000
 
 
@@ -500,11 +519,11 @@ def test_editing_an_account_sets_an_assumed_growth_rate(client, stored):
         f"/wealth/accounts/{pension.id}",
         data={"company": pension.company, "assumed_growth_rate": "4.5"},
     )
-    assert reload().account(pension.id).assumed_growth_rate == pytest.approx(0.045)
+    assert _account(reload(), pension.id).assumed_growth_rate == pytest.approx(0.045)
 
     # Blank clears it back to the observed rate.
     client.post(f"/wealth/accounts/{pension.id}", data={"company": pension.company})
-    assert reload().account(pension.id).assumed_growth_rate is None
+    assert _account(reload(), pension.id).assumed_growth_rate is None
 
 
 def test_unticking_still_contributing_clears_it(client, stored):
@@ -513,11 +532,11 @@ def test_unticking_still_contributing_clears_it(client, stored):
         f"/wealth/accounts/{pension.id}",
         data={"company": pension.company, "still_contributing": "1"},
     )
-    assert reload().account(pension.id).still_contributing is True
+    assert _account(reload(), pension.id).still_contributing is True
 
     # No `still_contributing` key at all: an unticked checkbox submits nothing.
     client.post(f"/wealth/accounts/{pension.id}", data={"company": pension.company})
-    assert reload().account(pension.id).still_contributing is False
+    assert _account(reload(), pension.id).still_contributing is False
 
 
 def test_still_contributing_accounts_are_listed_first(client, stored):
@@ -598,7 +617,7 @@ def test_a_first_valuation_has_no_previous_figure_to_grow_from(client):
         f"/wealth/{account.id}/snapshot", data={"as_of": "2026-09-20", "current": "100"}
     )
     assert response.status_code == 200
-    assert reload().latest_snapshot(account.id).year_growth is None
+    assert _latest(reload(), account.id).year_growth is None
 
 
 def test_snapshot_for_an_unknown_account_is_a_noop(client, stored):

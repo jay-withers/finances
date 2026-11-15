@@ -75,6 +75,14 @@ def test_parse_money_rejects_nonsense():
         parse_money("abc")
 
 
+@pytest.mark.parametrize("cell", [True, False])
+def test_parse_money_rejects_a_boolean_cell_as_not_an_amount(cell):
+    # openpyxl reads a TRUE/FALSE cell as a bool. It must fail like any other
+    # nonsense, with the cell named, not as an AttributeError from deep inside.
+    with pytest.raises(ValueError, match="not an amount"):
+        parse_money(cell)
+
+
 def test_outgoings_sum_exactly():
     """The whole reason for integer pence.
 
