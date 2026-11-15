@@ -161,10 +161,8 @@ def logout() -> Any:
     return response
 
 
-# The icon, drawn here rather than served from a file: there is no static mount
-# and no build step, and one SVG covers every size a phone asks for. The glyph
-# sits well inside the middle 80% of the canvas, so it survives being masked to
-# a circle on Android — which is what `purpose: maskable` below promises.
+# The favicon, drawn here rather than served from a file: one SVG covers every
+# size a browser tab asks for. The home-screen icons are the PNGs below.
 ICON_SVG = (
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">'
     '<rect width="512" height="512" rx="112" fill="#101014"/>'
@@ -206,30 +204,52 @@ def favicon() -> Response:
     return _icon_response()
 
 
+# The Android home-screen icons, rendered from the same design by
+# scripts/render-icons.py and committed. PNG because Android Chrome builds the
+# installed app from a raster icon. The maskable one is full-bleed with the
+# glyph inside the middle 80%, because the launcher crops it to its own shape.
+# Read once at import: three small files, served on every cold start.
+ICON_DIR = PACKAGE_DIR / "icons"
+# (filename, sizes, purpose) for each icon, which the manifest and route share.
+PNG_ICONS = (
+    ("icon-192.png", "192x192", "any"),
+    ("icon-512.png", "512x512", "any"),
+    ("icon-maskable-512.png", "512x512", "maskable"),
+)
+PNG_BYTES = {name: (ICON_DIR / name).read_bytes() for name, _, _ in PNG_ICONS}
+
+
+@public.get("/icons/{name}", include_in_schema=False)
+def png_icon(name: str) -> Response:
+    """A home-screen icon. Public, for the same reason as /icon.svg."""
+    content = PNG_BYTES.get(name)
+    if content is None:
+        return Response(status_code=status.HTTP_404_NOT_FOUND)
+    return Response(content=content, media_type="image/png", headers=ICON_HEADERS)
+
+
 @public.get("/manifest.json", include_in_schema=False)
 def manifest() -> JSONResponse:
     """What lets the phone install this to the home screen.
 
     `display: standalone` is the point of it — opened from the home screen there
     is no browser chrome, which on a phone is a whole row of pot balances.
+    `id` pins the installed app's identity, so a later change to `start_url`
+    updates the installed app rather than counting as a different one.
     """
     return JSONResponse(
         {
+            "id": "/",
             "name": "finances",
             "short_name": "money",
             "start_url": "/",
+            "scope": "/",
             "display": "standalone",
             "background_color": "#101014",
             "theme_color": "#101014",
             "icons": [
-                {
-                    "src": "/icon.svg",
-                    "type": "image/svg+xml",
-                    # "any": an SVG has no one size, and stating a fixed pair
-                    # here is what stops Chrome offering to install it.
-                    "sizes": "any",
-                    "purpose": "any maskable",
-                }
+                {"src": f"/icons/{name}", "type": "image/png", "sizes": sizes, "purpose": purpose}
+                for name, sizes, purpose in PNG_ICONS
             ],
         }
     )
