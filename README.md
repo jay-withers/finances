@@ -33,6 +33,7 @@ deployed blob instead.
 ```
 make                # every target, with a description
 make test           # the suite
+make typecheck      # mypy; CI runs it too
 make lint           # every pre-commit hook against every file
 make digest         # print the reminder email without sending it
 ```

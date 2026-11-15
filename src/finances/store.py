@@ -74,7 +74,8 @@ def save(document: Document, etag: str | None = None) -> str | None:
     """
     blob = _blob()
     if blob is None:
-        return _save_local(document)
+        _save_local(document)
+        return None  # a local file has no etag
 
     from azure.core import MatchConditions
     from azure.core.exceptions import ResourceExistsError, ResourceModifiedError

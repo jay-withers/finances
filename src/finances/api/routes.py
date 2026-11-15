@@ -104,10 +104,9 @@ def _sparkline(
     draw, and `snapshots_for` includes rows recorded for the projection alone,
     with no current figure at all.
     """
-    valued = sorted((s for s in snapshots if s.current_pence is not None), key=lambda s: s.as_of)
-    if len(valued) < 2:
+    values = [pence for _, pence in calc.valued_readings(snapshots)]
+    if len(values) < 2:
         return None
-    values = [s.current_pence for s in valued]
     low, high = min(values), max(values)
     span = high - low or 1  # a flat line: centred rather than a division by zero
     plot_height = height - 2 * pad

@@ -142,7 +142,7 @@ def test_require_session_is_a_noop_when_the_passcode_is_disabled(monkeypatch):
 
     monkeypatch.setenv("REQUIRE_PASSCODE", "false")
     settings_module.settings.cache_clear()
-    assert deps.require_session(None) is None
+    deps.require_session(None)  # raises if the passcode is still enforced
 
 
 def test_rotating_the_passcode_invalidates_sessions(monkeypatch):

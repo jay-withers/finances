@@ -170,9 +170,18 @@ market-agent carry the same one).
   over http every gated request would 303 and look like a bug in the gate.
 - The `doc` fixture is a small document with round numbers, built for
   assertions. It is deliberately not `seed.py`'s sample.
-- Coverage is **reported on every PR, never gated** (see `ci-python.yml`). A
-  threshold would mostly measure how much of the Azure SDK is mocked.
-  `pytest-cov` is not a dependency; the shared workflow injects it.
+- Total coverage is **reported on every PR, never gated** (see
+  `ci-python.yml`). A total threshold would mostly measure how much of the
+  Azure SDK is mocked. `pytest-cov` is not a dependency; the shared workflow
+  injects it. The diff gate below is different: for a change to the blob
+  path, the fake `BlobClient` in `test_store.py` is the right test, since it
+  checks what the code sends, not that a mock was called.
+
+CI gates two more things, both inside `test / Test`: mypy over
+`src/` and `tests/` (`[tool.mypy]` in `pyproject.toml`, so `make typecheck` runs
+the same check) and diff coverage. At least 80%
+of the lines a PR changes in `finances` must be run by a test. Don't meet the
+diff gate with a test that only asserts a mock; test the behaviour.
 
 ## Docker
 

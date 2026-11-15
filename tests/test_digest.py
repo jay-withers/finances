@@ -155,6 +155,7 @@ def test_a_failed_send_is_reported_not_raised(monkeypatch):
     result = mailer.send("subject", "<p>html</p>", "text", client=client)
 
     assert result.status == "failed"
+    assert result.error is not None
     assert "502" in result.error
 
 

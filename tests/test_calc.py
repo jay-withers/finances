@@ -171,6 +171,7 @@ def test_annualised_growth_scales_a_short_gap_up_to_a_year(today: date):
 
     fast = calc.annualised_growth([six_months_ago], 2_000, today)
     slow = calc.annualised_growth([a_year_ago], 2_000, today)
+    assert fast is not None and slow is not None
 
     assert fast > slow
     assert slow == pytest.approx(1.0, abs=0.01)  # doubling in ~a year is ~100%
@@ -191,6 +192,7 @@ def test_annualised_growth_prefers_the_reading_closest_to_a_year_back(today: dat
 
     from_last_quarter_alone = calc.annualised_growth([last_quarter], 2_000, today)
     using_full_history = calc.annualised_growth([a_year_ago, last_quarter], 2_000, today)
+    assert from_last_quarter_alone is not None and using_full_history is not None
 
     assert using_full_history == pytest.approx(0.0527, abs=0.005)
     assert from_last_quarter_alone > using_full_history
@@ -216,6 +218,7 @@ def test_valuation_change_covers_the_full_tracked_history():
         WealthSnapshot(account_id="a", as_of=date(2026, 1, 1), current_pence=1_200),
     ]
     change = calc.valuation_change(history)
+    assert change is not None
     assert change.amount_pence == 200
     assert change.fraction == pytest.approx(0.2)
     assert change.since == date(2025, 1, 1)
