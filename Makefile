@@ -90,7 +90,7 @@ push: ## Push the image to ghcr.io (needs write:packages)
 # Both workloads are rolled together. They run the same image and differ only in
 # `args`, so a deploy that moved one and not the other would leave the digest
 # reading a document written by a newer schema.
-deploy: ## Roll an image tag onto the app and the digest job (IMAGE_TAG required)
+deploy: ## Roll an image tag onto the app and every job (IMAGE_TAG required)
 	@if [ -z "$(IMAGE_TAG_EXPLICIT)" ]; then \
 		echo "error: pass a tag explicitly, e.g. make deploy IMAGE_TAG=v0.1.0" >&2; exit 1; fi
 	@case "$(IMAGE_TAG)" in latest|main|unset) \
@@ -108,6 +108,15 @@ deploy: ## Roll an image tag onto the app and the digest job (IMAGE_TAG required
 		--image $(IMAGE_REGISTRY)/finances:$(IMAGE_TAG) \
 		--set-env-vars IMAGE_TAG=$(IMAGE_TAG) \
 		STATE_CONTAINER_URL="$$(terraform -chdir=$(TF_DIR) output -raw state_container_url)"
+	az containerapp job update \
+		--name "$$(terraform -chdir=$(TF_DIR) output -raw backup_job_name)" \
+		--resource-group "$$(terraform -chdir=$(TF_DIR) output -raw resource_group_name)" \
+		--image $(IMAGE_REGISTRY)/finances:$(IMAGE_TAG) \
+		--set-env-vars IMAGE_TAG=$(IMAGE_TAG) \
+		STATE_CONTAINER_URL="$$(terraform -chdir=$(TF_DIR) output -raw state_container_url)" \
+		BACKUP_BUCKET="$$(terraform -chdir=$(TF_DIR) output -raw backup_bucket)" \
+		BACKUP_R2_ENDPOINT="$$(terraform -chdir=$(TF_DIR) output -raw backup_r2_endpoint)" \
+		BACKUP_AGE_RECIPIENT="$$(terraform -chdir=$(TF_DIR) output -raw backup_age_recipient)"
 
 # What cd-publish rolls back to when a deploy fails its smoke test: the tag
 # on the app now, or nothing if it isn't one of this repo's images yet (a
@@ -122,7 +131,7 @@ deployed-tag: ## Print the image tag live on the app
 
 # Run by cd-publish after every deploy (and by hand after a local one). A
 # failure there rolls back to `make deployed-tag`'s answer.
-smoke: ## Check IMAGE_TAG is live and ready on the app, and selfcheck its job (IMAGE_TAG required)
+smoke: ## Check IMAGE_TAG is live and ready on the app, and selfcheck every job (IMAGE_TAG required)
 	@if [ -z "$(IMAGE_TAG_EXPLICIT)" ]; then \
 		echo "error: pass the tag to check, e.g. make smoke IMAGE_TAG=v0.1.0" >&2; exit 1; fi
 	@terraform -chdir=$(TF_DIR) init -reconfigure -backend-config=backends/$(ENV).hcl >/dev/null
@@ -130,7 +139,8 @@ smoke: ## Check IMAGE_TAG is live and ready on the app, and selfcheck its job (I
 		"$$(terraform -chdir=$(TF_DIR) output -raw resource_group_name)" \
 		$(IMAGE_REGISTRY)/finances \
 		app:"$$(terraform -chdir=$(TF_DIR) output -raw container_app_name)" \
-		job:"$$(terraform -chdir=$(TF_DIR) output -raw digest_job_name)"
+		job:"$$(terraform -chdir=$(TF_DIR) output -raw digest_job_name)" \
+		job:"$$(terraform -chdir=$(TF_DIR) output -raw backup_job_name)"
 
 url: ## Print the application's URL
 	@custom="$$(terraform -chdir=$(TF_DIR) output -raw custom_domain_url)"; \
@@ -147,7 +157,10 @@ secrets: ## Print the az commands that populate this project's Key Vault
 	@vault="$$(terraform -chdir=$(TF_DIR) output -raw key_vault_name)"; \
 		echo "az keyvault secret set --vault-name $$vault --name APP-PASSCODE --value <passcode>"; \
 		echo "az keyvault secret set --vault-name $$vault --name RESEND-API-KEY --value <key>"; \
-		echo "az keyvault secret set --vault-name $$vault --name DIGEST-EMAIL-TO --value <you@example.com>"
+		echo "az keyvault secret set --vault-name $$vault --name DIGEST-EMAIL-TO --value <you@example.com>"; \
+		echo "az keyvault secret set --vault-name $$vault --name R2-ACCESS-KEY-ID --value <r2 access key id>"; \
+		echo "az keyvault secret set --vault-name $$vault --name R2-SECRET-ACCESS-KEY --value <r2 secret access key>"; \
+		echo "uv run python -c 'from pyrage import x25519; print(x25519.Identity.generate())' | az keyvault secret set --vault-name $$vault --name BACKUP-AGE-DRILL-KEY --file /dev/stdin -o none"
 
 # Both records must resolve *before* the apply that creates the certificate:
 # Azure validates them during issuance, not after.

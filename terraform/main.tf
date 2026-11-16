@@ -28,6 +28,15 @@ module "naming_digest" {
   suffix  = [var.project_name, var.environment, "digest"]
 }
 
+# The nightly backup job, named the same way. `caj-finances-dev-backup` is 23
+# characters too.
+module "naming_backup" {
+  # checkov:skip=CKV_TF_1: Terraform Registry module pinned by semver, as above.
+  source  = "Azure/naming/azurerm"
+  version = "~> 0.4"
+  suffix  = [var.project_name, var.environment, "backup"]
+}
+
 # The resource group is github-repos' (`create_resource_groups`), which
 # imported the one this config's first apply made, and grants the pipeline
 # Contributor and conditioned RBAC Administrator on it. Dropped from this state

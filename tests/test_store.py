@@ -258,3 +258,25 @@ def test_the_retry_applies_the_change_to_what_the_other_writer_left(blob, doc):
 
     written = Document.from_json(blob.uploads[1]["body"].decode("utf-8"))
     assert [line.name for line in written.income][-2:] == ["Theirs", "Mine"]
+
+
+def test_load_raw_returns_the_blob_exactly_as_stored(blob):
+    """The backup copies bytes, not this version's re-serialisation of them."""
+    blob.content = b'{"pots": [],  "odd spacing": 1}'
+    assert store.load_raw() == b'{"pots": [],  "odd spacing": 1}'
+
+
+def test_load_raw_of_a_blob_that_never_existed_is_none(blob):
+    assert store.load_raw() is None
+
+
+def test_load_raw_does_not_swallow_a_storage_error(blob):
+    blob.download_raises = HttpResponseError("storage is having a day")
+    with pytest.raises(HttpResponseError):
+        store.load_raw()
+
+
+def test_load_raw_reads_the_local_file_without_a_container():
+    assert store.load_raw() is None
+    store.local_path().write_bytes(b"document bytes")
+    assert store.load_raw() == b"document bytes"

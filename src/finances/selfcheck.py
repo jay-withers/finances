@@ -19,12 +19,21 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
+from functools import partial
 
 logger = logging.getLogger(__name__)
 
 # mailer.py (the digest job).
 SECRETS = ("RESEND-API-KEY",)
 OPTIONAL_SECRETS = ("DIGEST-EMAIL-TO",)
+
+# backup.py's. Checked only in the job given a bucket, so a missing R2 key
+# fails that job's selfcheck without it reading as a fault in the digest.
+BACKUP_SECRETS = (
+    "R2-ACCESS-KEY-ID",
+    "R2-SECRET-ACCESS-KEY",
+    "BACKUP-AGE-DRILL-KEY",
+)
 
 
 def checks() -> list[tuple[str, Callable[[], object]]]:
@@ -35,15 +44,29 @@ def checks() -> list[tuple[str, Callable[[], object]]]:
         if not secret(name):
             raise ValueError("resolved to an empty value")
 
-    return [
+    found: list[tuple[str, Callable[[], object]]] = [
         ("settings", settings),
-        *[(f"secret {name}", lambda name=name: present(name)) for name in SECRETS],
+        *[(f"secret {name}", partial(present, name)) for name in SECRETS],
         *[
-            (f"secret {name} (optional)", lambda name=name: optional_secret(name))
+            (f"secret {name} (optional)", partial(optional_secret, name))
             for name in OPTIONAL_SECRETS
         ],
         ("storage", store.load),
     ]
+    # Only the backup job is given a bucket, so only its selfcheck lists these.
+    # Settings that don't load are the "settings" check's failure to report, not
+    # a reason for this list to raise.
+    try:
+        backup_job = bool(settings().backup_bucket)
+    except Exception:
+        backup_job = False
+    if backup_job:
+        from . import backup
+
+        found += [(f"secret {name}", partial(present, name)) for name in BACKUP_SECRETS]
+        found.append(("backup settings and keys", backup.keys))
+        found.append(("backup bucket", backup.check_bucket))
+    return found
 
 
 def run() -> int:
