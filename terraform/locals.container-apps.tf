@@ -44,4 +44,13 @@ locals {
     # reaching it still needs the managed identity's RBAC grant.
     STATE_CONTAINER_URL = "${azurerm_storage_account.state.primary_blob_endpoint}${azurerm_storage_container.state.name}"
   }
+
+  # Only the backup job copies the document off Azure, so only it gets the
+  # bucket. None of these is a secret: the R2 keys and the drill key are in
+  # Key Vault.
+  backup_env = merge(local.common_env, {
+    BACKUP_BUCKET        = var.backup_bucket
+    BACKUP_R2_ENDPOINT   = var.backup_r2_endpoint
+    BACKUP_AGE_RECIPIENT = var.backup_age_recipient
+  })
 }

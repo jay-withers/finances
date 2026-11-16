@@ -119,6 +119,27 @@ def update(change: Callable[[Document], Document]) -> Document:
     raise AssertionError("unreachable")
 
 
+def load_raw() -> bytes | None:
+    """The document's bytes exactly as stored, or None if it has never been written.
+
+    For the backup (finances.backup), which must copy what is there rather than
+    what this version of the model would write back. Only absence is
+    tolerated, as in `load`.
+    """
+    blob = _blob()
+    if blob is None:
+        path = local_path()
+        return path.read_bytes() if path.exists() else None
+
+    from azure.core.exceptions import ResourceNotFoundError
+
+    try:
+        data: bytes = blob.download_blob().readall()
+    except ResourceNotFoundError:
+        return None
+    return data
+
+
 def _blob() -> Any:
     """A client for the document, or None when no container is configured.
 

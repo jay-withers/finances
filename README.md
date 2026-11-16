@@ -97,7 +97,7 @@ rollback.
 
 **Every deploy is smoke-tested, and a failed one rolls back.** Before deploying,
 the workflow records `make deployed-tag` (the tag on the app now). After it,
-`make smoke` (`scripts/smoke.sh`) checks that the app and the digest job are configured with
+`make smoke` (`scripts/smoke.sh`) checks that the app and every job are configured with
 the new tag, that the app's `/healthz` reports it as `version` on its default
 FQDN (allowing five minutes for a cold start), and that `/readyz` answers 200.
 It then starts one run of each job with its args swapped for `finances selfcheck`,
@@ -119,6 +119,50 @@ the commit SHA and never with a moving tag, matching [gym-log][gym-log] and
 
 See [terraform/README.md](terraform/README.md) for the first apply, the
 secrets, and the custom domain's manual binding step.
+
+## Backups
+
+The document is one blob in one LRS storage account. Versioning, soft delete
+and the delete lock cover a bad write or a slip of the hand, but not losing
+the subscription. So the **backup job** (`finances backup`, 02:45 UTC daily)
+copies `finances.json` to the cloudflare repo's R2 bucket `jw-app-backups`,
+encrypted with [age](https://age-encryption.org). It works the same way as
+gym-log's:
+
+- `daily/finances/<UTC timestamp>/finances.json.age`, kept 30 days.
+- `monthly/finances/<yyyy-mm>/finances.json.age`, written by the first
+  successful run in the month, kept a year.
+
+Nothing is overwritten: a rerun adds a copy beside the earlier ones.
+
+Each copy is encrypted to two keys. One is **the owner's**, whose public half
+is `backup_age_recipient` in `environments/dev.tfvars` (the same key as
+gym-log's) and whose private half lives only in a password manager. The other
+is a **drill key** in Key Vault (`BACKUP-AGE-DRILL-KEY`). After every upload
+the job downloads the copy, decrypts it with the drill key, checks it matches
+byte for byte and parses it as a `Document`. Any failure fails the job, and
+the platform's job-failure alert fires.
+
+**Setup (once):** put the R2 token's two halves (an Account API token with
+**Object Read & Write** on `jw-app-backups` only; gym-log's works) in Key
+Vault as `R2-ACCESS-KEY-ID` and `R2-SECRET-ACCESS-KEY`, and generate the drill
+key straight into Key Vault. `make secrets` prints all three commands. Do it
+**before** a release with the backup job deploys: the job's selfcheck checks
+them, so a missing one fails the smoke test and rolls the release back.
+
+**Restoring.** Download a copy from the R2 dashboard. Put the private key from
+the password manager in a file outside any repository (`cat > ~/backup.key`,
+paste, Ctrl+D; never `echo` it, where shell history keeps it), then:
+
+```bash
+mise exec age@latest -- age -d -i ~/backup.key -o finances.json finances.json.age
+LOCAL_STATE_PATH=finances.json uv run finances show | head
+rm ~/backup.key
+```
+
+Put it back with `az storage blob upload --auth-mode login --overwrite` into
+the container `make show` reads, or into a new storage account after a
+rebuild.
 
 [gym-log]: https://github.com/jay-withers/gym-log
 [ma]: https://github.com/jay-withers/market-agent

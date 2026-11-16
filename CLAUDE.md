@@ -86,13 +86,15 @@ Secrets resolve from the environment, then `.env`, then Key Vault
 `azurerm_key_vault_secret` and no Container Apps Key Vault reference: `make
 secrets` prints the `az` commands to set them by hand.
 
-`selfcheck.SECRETS` / `OPTIONAL_SECRETS` must list every secret a job reads.
+`selfcheck.SECRETS` / `OPTIONAL_SECRETS` must list every secret the digest
+reads, and `BACKUP_SECRETS` every secret the backup job reads (checked only in
+the job given `BACKUP_BUCKET`, so the digest doesn't need the R2 keys).
 `selfcheck` runs on every deploy, so **keep it free of side effects**: no
 email, no writes.
 
 ## The CLI and its workloads
 
-`finances serve|digest|import|show|seed|selfcheck`, one console script.
+`finances serve|digest|backup|import|show|seed|selfcheck`, one console script.
 
 - **Terraform sets no `command`.** The Dockerfile's `ENTRYPOINT` names the
   script and `args` picks the subcommand. market-agent took a full outage in
@@ -211,6 +213,27 @@ SHA with the tag as a comment:
 - `schedule-drift`, `manual-terraform-unlock`: the estate's standard pair.
 
 Required checks are set in github-repos, not here.
+
+## The backup job: keep these true
+
+`finances backup` (backup.py, main.container-apps-job.backup.tf) is adapted
+from gym-log's. Fix a bug in both until the shared app library takes it over.
+README's Backups section covers setup and restoring.
+
+- **Copy bytes, not the model.** `store.load_raw` returns the blob exactly as
+  stored. Round-tripping through `Document` would back up what *this* version
+  writes, and a field it drops would be lost from every copy.
+- **Never delete from the bucket here.** R2's lifecycle rules (cloudflare
+  repo) are the only retention. The R2 token is Object Read & Write on that
+  one bucket.
+- **The owner's private key never goes near Azure or CI.** The drill key is
+  separate, and readable only by what can already read the blob.
+- The R2 keys and the drill key are in `selfcheck.BACKUP_SECRETS`, checked
+  only in the job given `BACKUP_BUCKET`. Set them before the first release
+  that has the job, or its selfcheck fails the smoke test and rolls back.
+- **A rollback to a release from before the job** leaves the job running an
+  image with no `backup` subcommand. It fails every night, and the
+  job-failure alert says so, until a release with it deploys again.
 
 ## Commit messages
 

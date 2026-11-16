@@ -110,6 +110,13 @@ class Settings(BaseSettings):
     # `calc.projected_retirement_value`.
     retirement_growth_cap: float = 0.10
 
+    # The nightly off-Azure backup (`finances backup`, see backup.py). Only the
+    # backup job is given these. The recipient is the owner's age public key,
+    # whose private half never leaves their password manager; the R2 keys and
+    # the drill key are secrets, resolved by name in backup.py.
+    backup_bucket: str = ""
+    backup_r2_endpoint: str = ""
+    backup_age_recipient: str = ""
     log_level: str = Field(default="INFO")
 
 

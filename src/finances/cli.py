@@ -106,6 +106,10 @@ def main(argv: list[str] | None = None) -> int:
     digest.add_argument("--url", default="", help="link to the app, included in the email")
 
     sub.add_parser(
+        "backup", help="copy the document to R2, encrypted, and verify the copy restores"
+    )
+
+    sub.add_parser(
         "selfcheck", help="check settings, secrets and storage as a job would, doing nothing"
     )
 
@@ -127,6 +131,10 @@ def main(argv: list[str] | None = None) -> int:
             return _seed(args)
         if args.command == "digest":
             return _digest(args)
+        if args.command == "backup":
+            from . import backup
+
+            return backup.run()
         if args.command == "selfcheck":
             from . import selfcheck
 
