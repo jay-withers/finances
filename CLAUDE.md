@@ -179,10 +179,12 @@ market-agent carry the same one).
   `annualised_growth` fail a valuation's save), so add one when a function
   has an invariant rather than only examples. A counter-example it finds
   becomes an `@example` beside it. `conftest.py` loads the `dev` profile
-  locally (100 examples) and `ci` under `CI=true` (1000), both with no
-  deadline and the function-scoped-fixture health check off (`_isolated` is
-  autouse). So **a property test takes no fixtures**: one `doc` would be
-  shared, and mutated, across all its examples.
+  locally (100 random examples) and, under `CI=true`, Hypothesis' own
+  derandomized `ci` profile raised to 1000 examples, so a required check
+  never fails on one run's draw. Both have no deadline and the
+  function-scoped-fixture health check off (`_isolated` is autouse). So **a
+  property test takes no fixtures**: one `doc` would be shared, and mutated,
+  across all its examples.
 - Total coverage is **reported on every PR, never gated** (see
   `ci-python.yml`). A total threshold would mostly measure how much of the
   Azure SDK is mocked. `pytest-cov` is not a dependency; the shared workflow

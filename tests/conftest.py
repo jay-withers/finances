@@ -47,8 +47,20 @@ PASSCODE = "test-passcode"
 settings.register_profile(
     "dev", deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture]
 )
-settings.register_profile("ci", parent=settings.get_profile("dev"), max_examples=1000)
-settings.load_profile("ci" if os.environ.get("CI", "").lower() == "true" else "dev")
+# Built on Hypothesis' own `ci` profile rather than replacing it: that one is
+# derandomized (the same examples every run, so a required check can't fail on
+# one PR's draw and pass on its re-run) and prints a blob to reproduce a failure.
+_builtin_ci = settings.get_profile("ci")
+settings.register_profile(
+    "ci",
+    parent=_builtin_ci,
+    max_examples=1000,
+    suppress_health_check=[
+        *_builtin_ci.suppress_health_check,
+        HealthCheck.function_scoped_fixture,
+    ],
+)
+settings.load_profile("ci" if os.environ.get("CI", "").lower() in {"true", "1"} else "dev")
 
 
 @pytest.fixture
