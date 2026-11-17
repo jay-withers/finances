@@ -2,17 +2,22 @@
 
 from __future__ import annotations
 
-from datetime import date
+import math
+from datetime import date, timedelta
 
 import pytest
+from hypothesis import example, given
+from hypothesis import strategies as st
 
 from finances import calc
 from finances.model import (
     Document,
+    Line,
     PaydayRun,
     Pot,
     PotEntry,
     Renewal,
+    Transfer,
     WealthAccount,
     WealthSnapshot,
 )
@@ -466,3 +471,133 @@ def test_recent_movements_includes_valuations_and_empty_paydays(today: date):
         ("Aviva · valuation", 10_000),
         ("Payday · nothing moved", 0),
     ]
+
+
+# --- properties -----------------------------------------------------------------
+#
+# Every figure here is derived, so the guarantee is that the derivations agree
+# with each other and with the ledger for *any* document, not just `doc`.
+
+AMOUNT = st.integers(min_value=-(10**9), max_value=10**9)
+DAY = st.dates(min_value=date(2000, 1, 1), max_value=date(2100, 12, 31))
+POT_IDS = ("p1", "p2", "p3", "p4")
+
+
+@st.composite
+def ledgers(draw: st.DrawFn) -> Document:
+    """Pots, some archived, and entries against them, a few against no pot at all."""
+    pots = [
+        Pot(
+            id=pot_id,
+            name=pot_id,
+            monthly_pence=draw(st.integers(min_value=0, max_value=10**7)),
+            counts_toward_payday=draw(st.booleans()),
+            archived=draw(st.booleans()),
+        )
+        for pot_id in POT_IDS[: draw(st.integers(min_value=0, max_value=len(POT_IDS)))]
+    ]
+    entries = draw(
+        st.lists(
+            st.builds(
+                PotEntry,
+                pot_id=st.sampled_from([*POT_IDS, "deleted"]),
+                on=DAY,
+                amount_pence=AMOUNT,
+            ),
+            max_size=40,
+        )
+    )
+    return Document(pots=pots, pot_entries=entries)
+
+
+@given(ledgers())
+def test_every_balance_is_its_ledger_and_the_total_is_the_live_pots(doc: Document):
+    balances = calc.pot_balances(doc)
+    assert set(balances) == {p.id for p in doc.pots}
+    for pot in doc.pots:
+        assert balances[pot.id] == calc.pot_balance(doc, pot.id)
+    live = {p.id for p in doc.pots if not p.archived}
+    assert calc.pots_total(doc) == sum(e.amount_pence for e in doc.pot_entries if e.pot_id in live)
+
+
+def incomes_active(doc: Document) -> list[int]:
+    return [line.amount_pence for line in doc.income if line.active]
+
+
+@given(ledgers(), st.lists(AMOUNT, max_size=10), st.lists(AMOUNT, max_size=10), st.data())
+def test_spare_is_always_what_is_left(
+    doc: Document, incomes: list[int], outgoings: list[int], data: st.DataObject
+):
+    """income - outgoings - committed == spare, and the pots transfer tracks the pots."""
+    doc.income = [Line(name="in", amount_pence=a, active=data.draw(st.booleans())) for a in incomes]
+    doc.outgoings = [Line(name="out", amount_pence=a) for a in outgoings]
+    fixed = data.draw(AMOUNT)
+    doc.transfers = [
+        Transfer(label="pots", amount_pence=data.draw(AMOUNT), tracks_pots=True),
+        Transfer(label="fixed", amount_pence=fixed),
+        Transfer(label="the rest", amount_pence=None),
+    ]
+    result = calc.summary(doc)
+
+    assert result.income == sum(incomes_active(doc))
+    assert result.outgoings == sum(outgoings)
+    # Worked out from the pots here, not with calc's own helpers, so a
+    # regression in which pots a payday tops up shows up as a wrong total.
+    payday = sum(p.monthly_pence for p in doc.pots if p.counts_toward_payday and not p.archived)
+    assert result.savings_and_spends == payday + fixed
+    assert result.spare == sum(incomes_active(doc)) - sum(outgoings) - payday - fixed
+
+
+# Both found by this test: a 7x jump in a day overflowed, and a negative
+# valuation came back as a complex number. Either failed the snapshot's save.
+@example(previous=1, current=7, previous_on=date(2000, 1, 1), gap=1)
+@example(previous=1, current=-1, previous_on=date(2000, 1, 1), gap=1)
+@given(
+    previous=st.integers(min_value=1, max_value=10**12),
+    current=st.integers(min_value=-(10**12), max_value=10**12),
+    previous_on=DAY,
+    gap=st.integers(min_value=-30, max_value=3000),
+)
+def test_annualised_growth_is_a_real_number_or_none(
+    previous: int, current: int, previous_on: date, gap: int
+):
+    """It's stored on the snapshot, so anything but a finite float or None is a 500."""
+    history = [WealthSnapshot(account_id="a", as_of=previous_on, current_pence=previous)]
+    growth = calc.annualised_growth(history, current, previous_on + timedelta(days=gap))
+    if gap <= 0:
+        assert growth is None
+    else:
+        assert growth is None or (isinstance(growth, float) and math.isfinite(growth))
+
+
+@given(
+    value=st.integers(min_value=1, max_value=10**12),
+    previous_on=DAY,
+    gap=st.integers(min_value=1, max_value=3000),
+)
+def test_no_change_is_no_growth(value: int, previous_on: date, gap: int):
+    history = [WealthSnapshot(account_id="a", as_of=previous_on, current_pence=value)]
+    growth = calc.annualised_growth(history, value, previous_on + timedelta(days=gap))
+    assert growth == pytest.approx(0.0, abs=1e-12)
+
+
+@given(
+    current=st.integers(min_value=0, max_value=10**11),
+    rate=st.floats(allow_nan=False, allow_infinity=False, min_value=-10, max_value=10),
+    years_ahead=st.integers(min_value=1, max_value=60),
+)
+def test_a_retirement_estimate_never_compounds_past_the_cap(
+    current: int, rate: float, years_ahead: int
+):
+    """One noisy rate compounded over decades is the bug the cap exists for."""
+    today = date(2026, 11, 17)
+    account = WealthAccount(
+        company="x", target_retirement_year=today.year + years_ahead, assumed_growth_rate=rate
+    )
+    latest = WealthSnapshot(account_id=account.id, as_of=today, current_pence=current)
+    estimate = calc.projected_retirement_value(account, latest, today)
+
+    cap = settings().retirement_growth_cap
+    assert estimate is not None
+    assert round(current * (1 - cap) ** years_ahead) <= estimate
+    assert estimate <= round(current * (1 + cap) ** years_ahead)

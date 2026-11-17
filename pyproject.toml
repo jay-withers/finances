@@ -40,8 +40,16 @@ dependencies = [
 # The runtime still depends on plain httpx for the Resend call — TestClient
 # picks httpx2 when both are present, which is why both can coexist.
 dev = [
-  "pytest>=8.3", "ruff>=0.8", "httpx2>=0.28", "openpyxl>=3.1", "mypy>=2.4.1",
+  "pytest>=8.3",
+  "ruff>=0.8",
+  "httpx2>=0.28",
+  "openpyxl>=3.1",
+  "mypy>=2.4.1",
   "boto3-stubs[s3]>=1.44",
+  # Property tests (tests/test_money.py, test_calc.py, test_model.py): the
+  # invariants money and the derived figures must hold for every input, not
+  # just the examples someone thought of. Profiles live in tests/conftest.py.
+  "hypothesis>=6.140",
 ]
 
 # What the Dockerfile's ENTRYPOINT resolves to. Terraform sets no `command`, so
