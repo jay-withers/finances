@@ -246,3 +246,27 @@ def test_an_unreadable_document_fails_the_run(configured, r2, monkeypatch, caplo
     with caplog.at_level(logging.INFO):
         assert backup.run(client=r2, now=MID_MONTH) == 1
     assert "FAIL finances.json: RuntimeError" in caplog.text
+
+
+def test_a_key_vault_error_is_reported_as_itself_not_as_a_bad_key(
+    configured, r2, a_log, monkeypatch, caplog
+):
+    """A drill key Key Vault can't hand over is not a malformed one (from career #148)."""
+    monkeypatch.delenv("BACKUP_AGE_DRILL_KEY")
+    with caplog.at_level(logging.INFO):
+        assert backup.run(client=r2, now=MID_MONTH) == 1
+    assert "FAIL setup: RuntimeError: BACKUP-AGE-DRILL-KEY is not set" in caplog.text
+    assert "not an age secret key" not in caplog.text
+    assert r2.objects == {}
+
+
+def test_an_r2_client_that_cannot_be_built_is_logged_not_raised(
+    configured, a_log, monkeypatch, caplog
+):
+    def no_client() -> None:
+        raise RuntimeError("R2-ACCESS-KEY-ID is not set")
+
+    monkeypatch.setattr(backup, "r2_client", no_client)
+    with caplog.at_level(logging.INFO):
+        assert backup.run(now=MID_MONTH) == 1
+    assert "FAIL setup: RuntimeError: R2-ACCESS-KEY-ID is not set" in caplog.text
