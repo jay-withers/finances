@@ -38,6 +38,16 @@ make lint           # every pre-commit hook against every file
 make digest         # print the reminder email without sending it
 ```
 
+Against the deployed app (`az login`):
+
+```
+make url            # the app's URL
+make show           # print the deployed document as JSON
+make logs           # tail the app's logs
+make secrets        # print the az commands that populate the Key Vault
+make validate       # terraform validate, no credentials; plan/apply/fmt/init as usual
+```
+
 ## How it is put together
 
 Python 3.14, FastAPI and Jinja2, server-rendered. One image, one process, no
@@ -71,6 +81,10 @@ migration time they had drifted £28 apart.
 | `src/finances/store.py` | Blob load/save, with an ETag precondition |
 | `src/finances/importer.py` | The one-off spreadsheet migration |
 | `src/finances/digest.py` | The weekly reminder email |
+| `src/finances/mailer.py` | Sending it, through Resend |
+| `src/finances/backup.py` | The daily encrypted backup to R2 |
+| `src/finances/selfcheck.py` | The post-deploy check each job runs |
+| `src/finances/cli.py` | `finances serve`, `digest`, `backup`, `import`, `show`, `seed`, `selfcheck` |
 | `src/finances/api/` | Routes, the passcode gate, the app |
 | `terraform/` | The infrastructure — see [its README](terraform/README.md) |
 
@@ -112,13 +126,36 @@ must not change stored data in a way the previous version can't read.
 make deploy IMAGE_TAG=v0.2.0
 ```
 
-Images are published to `ghcr.io/jay-withers/finances` by `cd-tag` on every
-merge that touches the application, tagged with both the release version and
+Images are published to `ghcr.io/jay-withers/finances/finances` by
+`cd-publish` (called by `cd-tag`) on every merge that touches the application, tagged with both the release version and
 the commit SHA and never with a moving tag, matching [gym-log][gym-log] and
 [market-agent][ma].
 
-See [terraform/README.md](terraform/README.md) for the first apply, the
-secrets, and the custom domain's manual binding step.
+The app is served at `finances.jaywithers.uk` with an Azure-managed
+certificate. Its DNS records are in
+[jay-withers/cloudflare](https://github.com/jay-withers/cloudflare)
+(`make dns` prints what they should be), and binding the certificate is a
+manual `make bind-domain` after the apply. See
+[terraform/README.md](terraform/README.md) for the first apply, the secrets
+and the domain.
+
+## CI/CD
+
+Every workflow calls a shared one in
+[jay-withers/workflows](https://github.com/jay-withers/workflows), pinned by
+SHA.
+
+- **ci-pre-commit**, **ci-python** (pytest, mypy and diff coverage),
+  **ci-container-build** (build plus Trivy) and **ci-terraform** (validate,
+  then a real plan of dev commented on the PR) on pull requests.
+  **ci-codeql** scans the workflows.
+- **cd-tag** → **cd-publish**: a release on every merge, published and
+  deployed as above.
+- **cd-terraform**: plans dev on merge and opens a `terraform-pending` issue;
+  **Actions → cd-terraform → Run workflow** applies it.
+- **schedule-drift**: a nightly plan of dev, recorded in the platform's
+  `OpsEvents_CL` table. **manual-terraform-unlock** releases a stuck state
+  lock.
 
 ## Backups
 
