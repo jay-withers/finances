@@ -181,6 +181,21 @@ market-agent carry the same one).
   over http every gated request would 303 and look like a bug in the gate.
 - The `doc` fixture is a small document with round numbers, built for
   assertions. It is deliberately not `seed.py`'s sample.
+- **Browser tests live in `tests/e2e/`** (Playwright, through
+  `appkit.testing`): the real app under uvicorn on a free port, against a
+  document `finances seed` writes to a temp dir, driven by Chromium. They
+  sign in, open every screen in `PAGES` and a pot, record a payday and add a
+  pot. An autouse fixture fails any journey that leaves a console error; a
+  CSP block is one, so **an inline script without its nonce fails here**.
+  Add a new screen to `PAGES`. The server is session-scoped and starts
+  before `_isolated`, so its `env` sets the Azure variables empty itself
+  (empty, not removed, or `Settings` would read a `.env`). Journeys share
+  one document, so make what a test writes unique. Locally they skip without
+  Chromium (`make e2e` installs it); CI installs it (ci-python's
+  `playwright: true`) and fails rather than skips.
+- `.env` is stubbed at `appkit.keyvault.dotenv`, where the lookup happens.
+  `settings.dotenv` is only a re-export, so stubbing it stubs nothing
+  (`test_settings.py` holds the regression).
 - **Money, the derived figures and the document's JSON round trip have
   Hypothesis property tests** (the `# --- properties` blocks in
   `test_money.py` and `test_calc.py`, and `test_model.py`). They found three
