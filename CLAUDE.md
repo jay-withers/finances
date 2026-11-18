@@ -70,9 +70,14 @@ bug in every copy.
 - `telemetry.py`: from gym-log ← repo-agent ← market-agent.
 - `mailer.py`: from market-agent. security-testing's `mailer.py` is adapted
   from this one ("fix contract bugs in both").
-- `scripts/smoke.sh`: shared verbatim with gym-log, career, repo-agent,
-  market-agent and security-testing. `scripts/check-tf-standards.sh`: shared
-  verbatim with the Terraform repos.
+- `scripts/check-tf-standards.sh`: shared verbatim with the Terraform repos.
+
+The smoke test is not a copy: `make smoke` fetches `scripts/smoke.sh` from
+jay-withers/workflows at the commit `cd-publish.yml` pins
+`container-apps-deploy.yml` to, so change it there. `browser-check: true`
+there also loads the login page in Chromium on every release and rolls back
+on a console error. `/healthz` and `/readyz` come from `appkit.health`
+(`api/main.py`'s `_ready` is finances' readiness read).
 
 ## The passcode gate
 
