@@ -50,15 +50,24 @@ next save would write that back.
 - `tests/test_store.py` covers all of this against a fake `BlobClient`. A change
   to `store.py` needs a test there.
 
-## Copied modules: re-copy, don't diverge
+## Shared code: appkit, and the copies that remain
 
-Each carries a header naming where it came from. Fix a bug in every copy.
+[jay-withers/appkit](https://github.com/jay-withers/appkit) holds what career,
+finances and gym-log used to copy: `appkit.headers` (security headers and the
+CSP nonce), `appkit.passcode` (`api/deps.py` only names the cookie),
+`appkit.keyvault` (`settings.py` keeps `Settings` and the cached
+`secret`/`optional_secret`/`credential` wrappers the tests clear),
+`appkit.backup` and `appkit.selfcheck` (`backup.py` and `selfcheck.py` keep
+what is finances'). It is pinned by tag in `pyproject.toml` (`git+https`; the
+builder image carries git). **Fix a bug in those in appkit, with its regression
+test there**, then bump the tag here by hand with `uv lock`: Renovate isn't
+known to track it yet. appkit's loggers aren't `finances`, so their lines reach
+Log Analytics as console logs, not App Insights traces.
 
-- `settings.py`, `telemetry.py`: from gym-log ← repo-agent ← market-agent.
-  This is the **fourth** copy; the standing decision is to extract a library
-  the next time the same bug is fixed twice.
-- `api/deps.py` (the passcode gate): from gym-log, cookie name aside.
-- `api/headers.py`: verbatim across career, finances and gym-log.
+The rest are still copies, each with a header naming where it came from. Fix a
+bug in every copy.
+
+- `telemetry.py`: from gym-log ← repo-agent ← market-agent.
 - `mailer.py`: from market-agent. security-testing's `mailer.py` is adapted
   from this one ("fix contract bugs in both").
 - `scripts/smoke.sh`: shared verbatim with gym-log, career, repo-agent,
@@ -229,8 +238,8 @@ Required checks are set in github-repos, not here.
 
 ## The backup job: keep these true
 
-`finances backup` (backup.py, main.container-apps-job.backup.tf) is adapted
-from gym-log's. Fix a bug in both until the shared app library takes it over.
+`finances backup` (backup.py, main.container-apps-job.backup.tf) runs
+appkit's backup job over finances' one document.
 README's Backups section covers setup and restoring.
 
 - **Copy bytes, not the model.** `store.load_raw` returns the blob exactly as

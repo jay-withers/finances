@@ -68,7 +68,7 @@ def backup_job(monkeypatch):
         monkeypatch.setenv(name.replace("-", "_"), "value-of-secret")
     monkeypatch.setenv("BACKUP_AGE_DRILL_KEY", str(x25519.Identity.generate()))
     calls: list[str] = []
-    monkeypatch.setattr(backup, "check_bucket", lambda: calls.append("listed"))
+    monkeypatch.setattr(backup.JOB, "check_bucket", lambda: calls.append("listed"))
     return calls
 
 
