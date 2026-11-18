@@ -333,8 +333,15 @@ def annualised_growth(
 
     A ratio, not a percentage: 0.29 means 29%. None when there is nothing to
     compare against — no prior valued reading, or the closest one is dated
-    the same day as `as_of` or later.
+    the same day as `as_of` or later — and None when no rate means anything:
+    a negative valuation (a fractional power of a negative ratio is a complex
+    number), or a jump so big over so few days that annualising it overflows
+    a float (a reading with a digit too many, the day after the last one).
+    Either used to fail the snapshot it was being stored on, so the valuation
+    couldn't be saved at all.
     """
+    if current_pence < 0:
+        return None
     valued = [
         (s.as_of, s.current_pence)
         for s in history
@@ -346,7 +353,10 @@ def annualised_growth(
     previous_on, previous_pence = min(valued, key=lambda pair: abs((pair[0] - target).days))
     days = (as_of - previous_on).days
     years = days / 365.25
-    return (current_pence / previous_pence) ** (1 / years) - 1
+    try:
+        return (current_pence / previous_pence) ** (1 / years) - 1
+    except OverflowError:
+        return None
 
 
 def projected_retirement_value(

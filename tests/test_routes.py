@@ -374,6 +374,39 @@ def test_recording_a_valuation_appends_rather_than_replaces(client, stored):
     assert latest.year_growth == pytest.approx(expected)
 
 
+@pytest.mark.parametrize(
+    ("current", "pence"),
+    [
+        # A digit too many, the day after the last reading: annualising a 10x
+        # day overflowed a float.
+        ("10000", 1_000_000),
+        # An account that's gone negative: the growth came out complex.
+        ("-50", -5_000),
+    ],
+)
+def test_a_valuation_whose_growth_means_nothing_still_saves(client, current, pence):
+    """Both used to be a 500, so the reading couldn't be recorded at all."""
+
+    def one_reading(document: Document) -> Document:
+        account = WealthAccount(company="Fresh")
+        document.wealth_accounts.append(account)
+        document.wealth_snapshots.append(
+            WealthSnapshot(account_id=account.id, as_of=date(2026, 9, 19), current_pence=100_000)
+        )
+        return document
+
+    account = store.update(one_reading).wealth_accounts[-1]
+
+    response = client.post(
+        f"/wealth/{account.id}/snapshot", data={"as_of": "2026-09-20", "current": current}
+    )
+
+    assert response.status_code == 200
+    latest = _latest(reload(), account.id)
+    assert latest.current_pence == pence
+    assert latest.year_growth is None
+
+
 def test_a_mistyped_valuation_can_be_deleted(client, stored):
     pension = stored.wealth_accounts[0]
     mistyped = stored.latest_snapshot(pension.id)

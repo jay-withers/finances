@@ -14,7 +14,7 @@ plausible.
 
 from __future__ import annotations
 
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 
 __all__ = ["format_money", "format_pounds", "parse_money"]
 
@@ -53,7 +53,9 @@ def parse_money(value: str | int | float | Decimal | None) -> int:
 
     try:
         return int((Decimal(text) * 100).quantize(Decimal("1")))
-    except (InvalidOperation, ValueError) as exc:
+    # ArithmeticError, not just InvalidOperation: "1e999999999" parses as a
+    # Decimal and then raises decimal.Overflow, which is neither.
+    except (ArithmeticError, ValueError) as exc:
         raise ValueError(f"not an amount: {value!r}") from exc
 
 

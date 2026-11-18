@@ -15,10 +15,12 @@ each test its own document with no Azure and no mocking.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Iterator
 from datetime import date
 
 import pytest
+from hypothesis import HealthCheck, settings
 
 from finances import settings as settings_module
 from finances.model import (
@@ -33,6 +35,32 @@ from finances.model import (
 )
 
 PASSCODE = "test-passcode"
+
+# Property tests. `make test` locally runs Hypothesis' default 100 examples; CI
+# (where GitHub sets CI=true) runs more, since a slower check there costs
+# nobody's attention. No deadline: a shared runner's pauses would read as a
+# flaky failure. The function-scoped-fixture check is off because `_isolated`
+# is autouse, so every test has it, and Hypothesis would refuse every @given
+# test. That is only safe while **a property test takes no fixtures** (no
+# `doc`, `stored` or `client`): one instance is shared by all its examples, so
+# a property that mutated one would leak state from example to example.
+settings.register_profile(
+    "dev", deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture]
+)
+# Built on Hypothesis' own `ci` profile rather than replacing it: that one is
+# derandomized (the same examples every run, so a required check can't fail on
+# one PR's draw and pass on its re-run) and prints a blob to reproduce a failure.
+_builtin_ci = settings.get_profile("ci")
+settings.register_profile(
+    "ci",
+    parent=_builtin_ci,
+    max_examples=1000,
+    suppress_health_check=[
+        *_builtin_ci.suppress_health_check,
+        HealthCheck.function_scoped_fixture,
+    ],
+)
+settings.load_profile("ci" if os.environ.get("CI", "").lower() in {"true", "1"} else "dev")
 
 
 @pytest.fixture

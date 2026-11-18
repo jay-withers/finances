@@ -5,6 +5,8 @@ from __future__ import annotations
 from decimal import Decimal
 
 import pytest
+from hypothesis import example, given
+from hypothesis import strategies as st
 
 from finances.money import format_money, format_pounds, parse_money
 
@@ -112,3 +114,67 @@ def test_format_pounds_round_trips():
     """What goes into a form field has to come back out unchanged."""
     for pence in (0, 5, 4500, 272253, -2500):
         assert parse_money(format_pounds(pence)) == pence
+
+
+# --- properties -----------------------------------------------------------------
+#
+# The examples above are the cases someone thought of. These hold for every
+# amount: money is the one thing in this app that must never be a penny out.
+
+PENCE = st.integers(min_value=-(10**15), max_value=10**15)
+
+
+@given(PENCE)
+def test_a_form_value_parses_back_to_the_same_pence(pence: int):
+    """`format_pounds` fills an <input>; what the browser posts back must be equal."""
+    assert parse_money(format_pounds(pence)) == pence
+
+
+@given(PENCE)
+def test_a_displayed_amount_parses_back_to_the_same_pence(pence: int):
+    assert parse_money(format_money(pence)) == pence
+
+
+@given(st.integers(min_value=-(10**15), max_value=10**15))
+def test_a_whole_number_is_pounds(pounds: int):
+    assert parse_money(pounds) == pounds * 100
+    assert parse_money(str(pounds)) == pounds * 100
+
+
+@given(st.integers(min_value=-(10**13), max_value=10**13))
+def test_a_spreadsheet_float_lands_on_the_penny_it_shows(pence: int):
+    """openpyxl's floats: `38.97` must be 3897, never 3896, at any size a cell holds."""
+    assert parse_money(pence / 100) == pence
+
+
+@given(st.lists(PENCE, max_size=50))
+def test_summing_parsed_amounts_never_drifts(amounts: list[int]):
+    """The spreadsheet's £2722.5299999999997, for any column of figures."""
+    assert sum(parse_money(format_pounds(p)) for p in amounts) == sum(amounts)
+
+
+@given(st.text())
+def test_any_text_is_an_amount_or_a_value_error(text: str):
+    """A form field can hold anything. It must never be a 500."""
+    try:
+        result = parse_money(text)
+    except ValueError:
+        return
+    assert isinstance(result, int)
+
+
+NUMBERISH = st.one_of(
+    st.from_regex(r"\A[-+]?[£]?[0-9,]{0,20}(\.[0-9]{0,6})?([eE][-+]?[0-9]{1,12})?\Z"),
+    st.sampled_from(["nan", "NaN", "inf", "-Infinity", "sNaN", "1e999999999", "-0", "1_000"]),
+)
+
+
+@example("1e999999999")  # decimal.Overflow, found by this test
+@given(NUMBERISH)
+def test_anything_number_shaped_is_an_amount_or_a_value_error(text: str):
+    """Exponents, NaN and infinity get through Decimal; they must not get through here."""
+    try:
+        result = parse_money(text)
+    except ValueError:
+        return
+    assert isinstance(result, int)
