@@ -79,8 +79,10 @@ def _isolated(tmp_path, monkeypatch) -> Iterator[None]:
     monkeypatch.delenv("KEY_VAULT_URI", raising=False)
     monkeypatch.delenv("APPLICATIONINSIGHTS_CONNECTION_STRING", raising=False)
     # `.env` belongs to whoever is running the command, and a developer's one
-    # would otherwise leak into the test run.
-    monkeypatch.setattr(settings_module, "dotenv", lambda: {})
+    # would otherwise leak into the test run. Patched where appkit.keyvault
+    # looks it up: `settings.dotenv` is only a re-export, and stubbing that
+    # name (as this did before appkit) stubs nothing.
+    monkeypatch.setattr("appkit.keyvault.dotenv", dict)
 
     _clear_caches()
     yield

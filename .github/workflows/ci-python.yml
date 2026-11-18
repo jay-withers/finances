@@ -33,7 +33,7 @@ jobs:
     #
     # Deliberately not path filtered: a required check skipped by a path filter
     # never reports, which blocks a pull request rather than passing it.
-    uses: jay-withers/workflows/.github/workflows/python.yml@591303373c157fb12b428f3aa0dd4fc696a73f57 # v1.28.5
+    uses: jay-withers/workflows/.github/workflows/python.yml@a50f010c3052f2d14a9f3a49ed54b9576429dcd6 # v1.29.0
     with:
       # The package is at the repository root; there is one deliverable and no
       # apps/ nesting to point at.
@@ -51,5 +51,7 @@ jobs:
       # only asserts a mock still counts, so review the tests too.
       diff-coverage: "80"
       typecheck: mypy
+      # Chromium for tests/e2e/, in this same job: no new required check.
+      playwright: true
       # No `postgres` input: this project has no database — the document is one
       # JSON blob. That is the whole reason the shared platform carries none.
