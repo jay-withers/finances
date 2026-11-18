@@ -58,10 +58,10 @@ CSP nonce), `appkit.passcode` (`api/deps.py` only names the cookie),
 `appkit.keyvault` (`settings.py` keeps `Settings` and the cached
 `secret`/`optional_secret`/`credential` wrappers the tests clear),
 `appkit.backup` and `appkit.selfcheck` (`backup.py` and `selfcheck.py` keep
-what is finances'). It is pinned by tag in `pyproject.toml` (`git+https`; the
-builder image carries git). **Fix a bug in those in appkit, with its regression
-test there**, then bump the tag here by hand with `uv lock`: Renovate isn't
-known to track it yet. appkit's loggers aren't `finances`, so their lines reach
+what is finances'). It is pinned by tag in `pyproject.toml`'s
+`[tool.uv.sources]` (the builder image carries git). **Fix a bug in those in
+appkit, with its regression test there**; Renovate then raises the tag bump
+here, `uv lock` included. appkit's loggers aren't `finances`, so their lines reach
 Log Analytics as console logs, not App Insights traces.
 
 The rest are still copies, each with a header naming where it came from. Fix a
