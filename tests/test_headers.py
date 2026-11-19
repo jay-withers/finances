@@ -111,7 +111,16 @@ def test_every_template_script_carries_the_nonce(template):
             assert 'nonce="{{ request.state.csp_nonce }}"' in tag, tag
 
 
-def test_no_template_has_a_script_yet():
-    """finances has no scripts, so the nonce tests above check nothing. The
-    first script added fails this, so wiring its nonce is deliberate."""
-    assert not [p.name for p in TEMPLATES if "<script" in p.read_text().lower()]
+def test_the_scripts_are_where_they_are_expected():
+    """The nonce tests above check every script; this keeps track of where they
+    are, so a new one is added deliberately rather than slipped in."""
+    assert [p.name for p in TEMPLATES if "<script" in p.read_text().lower()] == ["insights.html"]
+
+
+def test_a_rendered_script_carries_this_responses_nonce(client):
+    """The template test reads the source; this checks the nonce that reaches
+    the browser is the one the CSP header allows."""
+    response = client.get("/insights")
+    nonce = re.search(r"'nonce-([^']+)'", response.headers["content-security-policy"])
+    assert nonce is not None
+    assert f'<script nonce="{nonce.group(1)}">' in response.text

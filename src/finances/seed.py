@@ -16,6 +16,7 @@ from datetime import date, timedelta
 from .model import (
     Document,
     Line,
+    PaydayRun,
     Pot,
     PotEntry,
     Renewal,
@@ -23,6 +24,13 @@ from .model import (
     WealthAccount,
     WealthSnapshot,
 )
+
+
+def _months_back(today: date, count: int) -> date:
+    """The last day of the month `count` months before `today`'s."""
+    following = today.year * 12 + today.month - count  # the month after, counted from year 0
+    year, month = divmod(following, 12)
+    return date(year, month + 1, 1) - timedelta(days=1)
 
 
 def sample_document(today: date | None = None) -> Document:
@@ -56,8 +64,12 @@ def sample_document(today: date | None = None) -> Document:
     ]
     doc.pots = pots
 
-    balances = [142_500, 31_000, 68_000, -4_500, 610_000]
-    opened = today.replace(day=1) - timedelta(days=1)
+    # A year of history, so the ledger's months and the insights charts have
+    # something to show: opening balances a year back, eleven paydays since,
+    # and the spends a household's pots exist for. This month's payday is left
+    # unrun, so the payday screen has its button and the attention panel nags.
+    balances = [62_500, 4_000, 45_000, 18_000, 540_000]
+    opened = _months_back(today, 12)
     for pot, balance in zip(pots, balances, strict=True):
         doc.pot_entries.append(
             PotEntry(
@@ -68,15 +80,54 @@ def sample_document(today: date | None = None) -> Document:
                 note="Sample data",
             )
         )
-    # One spend, so a pot page has something other than its opening line — and
-    # it is the one that leaves "House repairs" overdrawn.
+    for back in range(11, 0, -1):
+        payday = _months_back(today, back).replace(day=28)
+        entries = [
+            PotEntry(
+                pot_id=p.id,
+                on=payday,
+                amount_pence=p.monthly_pence,
+                kind="payday",
+                note=f"Payday {payday:%Y-%m}",
+            )
+            for p in pots
+            if p.counts_toward_payday
+        ]
+        doc.pot_entries += entries
+        doc.payday_runs.append(
+            PaydayRun(
+                month=f"{payday.year:04d}-{payday.month:02d}",
+                run_on=payday,
+                entry_ids=[e.id for e in entries],
+            )
+        )
+    spends = [
+        (0, 9, -210_000, "Summer holiday"),  # Holidays
+        (0, 4, -48_000, "Weekend away"),
+        (1, 1, -82_000, "Presents"),  # Christmas, whenever it last fell
+        (2, 6, -64_000, "Service and tyres"),  # Car
+        (3, 7, -95_000, "Roof repair"),  # House repairs
+        (4, 5, -150_000, "New sofa"),  # Savings
+    ]
+    for pot_index, back, amount, note in spends:
+        doc.pot_entries.append(
+            PotEntry(
+                pot_id=pots[pot_index].id,
+                on=_months_back(today, back).replace(day=12),
+                amount_pence=amount,
+                kind="spend",
+                note=note,
+            )
+        )
+    # And one this month — the one that leaves "House repairs" overdrawn.
     doc.pot_entries.append(
         PotEntry(
             pot_id=pots[3].id,
-            on=today - timedelta(days=9),
-            amount_pence=-16_500,
+            # Nine days back, but never into last month.
+            on=max(today.replace(day=1), today - timedelta(days=9)),
+            amount_pence=-120_000,
             kind="spend",
-            note="Boiler part",
+            note="Boiler",
         )
     )
 

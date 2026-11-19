@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 from datetime import date, timedelta
+from itertools import pairwise
 
 import pytest
 from hypothesis import example, given
@@ -77,6 +78,121 @@ def test_pots_ledger_months_leaves_out_entries_for_a_deleted_pot(doc: Document):
 
 def test_ledger_months_of_nothing_is_empty():
     assert calc.ledger_months([]) == []
+
+
+# --- insights -----------------------------------------------------------------
+
+
+def test_month_starts_cross_a_year_end():
+    assert calc.month_starts(date(2026, 2, 17), 3) == [
+        date(2025, 12, 1),
+        date(2026, 1, 1),
+        date(2026, 2, 1),
+    ]
+
+
+def test_monthly_flows_fill_empty_months_and_carry_the_balance(doc: Document):
+    # The doc: openings on 31 Aug (147500 + 630000 across pots), a 30000 spend
+    # on 2 Sep. Nothing in October or November.
+    flows = calc.monthly_flows(doc, date(2026, 11, 5), months=4)
+    assert [f.month for f in flows] == [date(2026, m, 1) for m in (8, 9, 10, 11)]
+    assert [f.paid_in for f in flows] == [0, 0, 0, 0]  # an import isn't money in
+    assert [f.paid_out for f in flows] == [0, -30_000, 0, 0]
+    assert [f.closing for f in flows] == [777_500, 747_500, 747_500, 747_500]
+
+
+def test_monthly_flows_start_from_the_balance_before_the_window(doc: Document):
+    flows = calc.monthly_flows(doc, date(2027, 1, 5), months=2)
+    assert [f.closing for f in flows] == [747_500, 747_500]
+
+
+def test_average_rounds_to_the_nearest_penny_either_side_of_zero():
+    assert calc.average(1_000, 12) == 83  # 83.33
+    assert calc.average(1_010, 12) == 84  # 84.17
+    assert calc.average(-1_010, 12) == -84
+    assert calc.average(6, 12) == 1  # half rounds away from zero
+    assert calc.average(-6, 12) == -1
+
+
+def test_pot_health_verdicts_worst_first(doc: Document):
+    holidays, _car, general = doc.pots
+    today = date(2026, 11, 5)
+    doc.pot_entries += [
+        # Holidays: topped up 450 a month for the last two full months.
+        PotEntry(pot_id=holidays.id, on=date(2026, 9, 28), amount_pence=45_000, kind="payday"),
+        PotEntry(pot_id=holidays.id, on=date(2026, 10, 28), amount_pence=45_000, kind="payday"),
+        # Savings: 1200 out over its three months, so 400 a month.
+        PotEntry(pot_id=general.id, on=date(2026, 10, 2), amount_pence=-120_000, kind="spend"),
+        # This month isn't judged yet: a big spend here changes nothing.
+        PotEntry(pot_id=holidays.id, on=date(2026, 11, 2), amount_pence=-500_000, kind="spend"),
+    ]
+    health = calc.pot_health(doc, today)
+    by_name = {h.pot.name: h for h in health}
+
+    assert [h.pot.name for h in health] == ["Holidays", "Car", "Savings"]
+    # Holidays is overdrawn by this month's spend, though its months were good.
+    assert by_name["Holidays"].verdict == "overdrawn"
+    # The doc's pots opened on 31 August, so they have three full months.
+    assert by_name["Holidays"].months_of_history == 3
+    assert by_name["Holidays"].average_in == 30_000  # 90000 / 3
+    assert by_name["Car"].verdict == "overdrawn"
+    savings = by_name["Savings"]
+    assert savings.average_out == -40_000
+    assert savings.verdict == "running down"
+    assert savings.months_left == 13  # 510000 / 40000, rounded up
+
+
+def test_a_young_pot_is_averaged_over_the_months_it_has_existed():
+    """Two months of spending spread over twelve said it would last six times
+    longer than it will."""
+    pot = Pot(name="New")
+    doc = Document(
+        pots=[pot],
+        pot_entries=[
+            PotEntry(pot_id=pot.id, on=date(2026, 9, 1), amount_pence=60_000, kind="opening"),
+            PotEntry(pot_id=pot.id, on=date(2026, 9, 15), amount_pence=-30_000, kind="spend"),
+            PotEntry(pot_id=pot.id, on=date(2026, 10, 15), amount_pence=-20_000, kind="spend"),
+        ],
+    )
+    (health,) = calc.pot_health(doc, date(2026, 11, 5))
+    assert (health.months_of_history, health.average_out) == (2, -25_000)
+    assert health.months_left == 1  # 10000 left at 25000 a month
+
+
+def test_a_pot_opened_this_month_is_new_not_judged():
+    pot = Pot(name="Fresh")
+    doc = Document(
+        pots=[pot],
+        pot_entries=[PotEntry(pot_id=pot.id, on=date(2026, 11, 2), amount_pence=5_000)],
+    )
+    (health,) = calc.pot_health(doc, date(2026, 11, 5))
+    assert (health.months_of_history, health.average_net, health.verdict) == (0, 0, "new")
+
+
+def test_an_empty_pot_still_spending_says_so_rather_than_steady():
+    pot = Pot(name="Spent")
+    doc = Document(
+        pots=[pot],
+        pot_entries=[
+            PotEntry(pot_id=pot.id, on=date(2026, 9, 1), amount_pence=40_000, kind="opening"),
+            PotEntry(pot_id=pot.id, on=date(2026, 10, 1), amount_pence=-40_000, kind="spend"),
+        ],
+    )
+    (health,) = calc.pot_health(doc, date(2026, 11, 5))
+    assert (health.balance, health.verdict) == (0, "empty")
+
+
+def test_pot_health_growing_steady_and_archived(doc: Document):
+    holidays, car, _general = doc.pots
+    car.archived = True
+    doc.pot_entries.append(
+        PotEntry(pot_id=holidays.id, on=date(2026, 10, 28), amount_pence=12_000, kind="payday")
+    )
+    health = {h.pot.name: h for h in calc.pot_health(doc, date(2026, 11, 5))}
+    assert "Car" not in health
+    assert health["Holidays"].verdict == "growing"
+    assert health["Savings"].verdict == "steady"  # nothing moved, only imported
+    assert health["Savings"].months_left is None
 
 
 def test_payday_pots_excludes_the_general_pot(doc: Document):
@@ -577,6 +693,32 @@ def test_ledger_months_account_for_every_entry_once(doc: Document):
         assert m.paid_in >= 0 >= m.paid_out
         assert m.net + m.imported + m.adjusted == sum(e.amount_pence for e in m.entries)
     assert (months[0].closing if months else 0) == sum(balances.values())
+
+
+@given(st.integers(-(10**12), 10**12), st.integers(1, 120))
+def test_average_is_within_half_a_penny(total: int, count: int):
+    assert abs(calc.average(total, count) * count - total) * 2 <= count
+
+
+@given(ledgers(), DAY)
+def test_monthly_flows_end_on_every_pots_balance(doc: Document, today: date):
+    """Nothing after `today` is counted, and every month adds up."""
+    known = {p.id for p in doc.pots}
+    doc.pot_entries = [e for e in doc.pot_entries if e.on <= today]
+    flows = calc.monthly_flows(doc, today)
+    assert len(flows) == 12
+    assert flows[-1].closing == sum(e.amount_pence for e in doc.pot_entries if e.pot_id in known)
+    for before, after in pairwise(flows):
+        assert after.paid_in >= 0 >= after.paid_out
+        moved_or_not = after.closing - before.closing
+        others = sum(
+            e.amount_pence
+            for e in doc.pot_entries
+            if e.pot_id in known
+            and e.on.replace(day=1) == after.month
+            and e.kind in ("opening", "adjustment")
+        )
+        assert moved_or_not == after.net + others
 
 
 def incomes_active(doc: Document) -> list[int]:

@@ -24,7 +24,7 @@ from fastapi import APIRouter, Form, Request, Response, status
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
-from .. import calc, store
+from .. import calc, charts, store
 from ..model import (
     Document,
     Line,
@@ -536,6 +536,68 @@ def pot_entry_delete(pot_id: str, entry_id: str, month: str = Form(default="")) 
     # Checked, since it lands in the Location header.
     reopen = f"?month={month}" if _MONTH.fullmatch(month) else ""
     return _back(f"/pots/{pot_id}{reopen}")
+
+
+# --- insights -----------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Share:
+    """One part of the "where the money goes" bar."""
+
+    label: str
+    amount_pence: int
+    percent: int  # of income, whole percent, for the bar's width and label
+    css: str  # the part's colour class
+
+
+def _income_split(summary: calc.Summary) -> list[Share]:
+    """Outgoings, savings and spare as shares of income. Empty when there is
+    no income, or when the plan spends more than comes in (the page says so
+    instead: a bar can't show more than its whole)."""
+    if summary.income <= 0 or summary.spare < 0:
+        return []
+    parts = [
+        ("Outgoings", summary.outgoings, "c-out"),
+        ("Savings & spends", summary.savings_and_spends, "c-save"),
+        ("Spare", summary.spare, "c-spare"),
+    ]
+    return [
+        Share(label, amount, (amount * 100 + summary.income // 2) // summary.income, css)
+        for label, amount, css in parts
+        if amount > 0
+    ]
+
+
+@router.get("/insights", response_class=HTMLResponse, include_in_schema=False)
+def insights_page(request: Request) -> Any:
+    doc, _etag = store.load()
+    today = _today()
+    flows = calc.monthly_flows(doc, today)
+    summary = calc.summary(doc)
+    return templates.TemplateResponse(
+        request,
+        "insights.html",
+        {
+            "doc": doc,
+            "today": today,
+            "flows": flows,
+            "paid_in": sum(f.paid_in for f in flows),
+            "paid_out": sum(f.paid_out for f in flows),
+            # Full months only, as the pots' averages are: the current month
+            # is part-way through, and before payday it would drag this down.
+            "average_month": calc.average(sum(f.net for f in flows[:-1]), len(flows) - 1),
+            "balance_chart": charts.balance_chart(flows),
+            "flow_chart": charts.flow_chart(flows),
+            "health": calc.pot_health(doc, today),
+            "summary": summary,
+            "split": _income_split(summary),
+            "W": charts.WIDTH,
+            "H": charts.HEIGHT,
+            "LEFT": charts.LEFT,
+            "RIGHT": charts.RIGHT,
+        },
+    )
 
 
 # --- the monthly picture ------------------------------------------------------

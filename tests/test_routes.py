@@ -298,6 +298,58 @@ def test_unknown_pot_redirects_rather_than_500s(client):
     assert client.get("/pots/nope").status_code == 200
 
 
+# --- insights -----------------------------------------------------------------
+
+
+@pytest.fixture
+def november(monkeypatch):
+    monkeypatch.setattr("finances.api.routes._today", lambda: date(2026, 11, 5))
+
+
+def test_insights_shows_the_year_the_pots_and_the_split(client, stored, november):
+    html = client.get("/insights").text
+
+    assert "Saved, 12 months" in html
+    assert "-£300" in html  # the one spend; the imports aren't saving
+    assert "September 2026: £7,475" in html  # the balance chart's tip for that month
+    assert "September 2026: in £0, out £300, net -£300" in html
+    # Every pot, linked, with a verdict; Car is overdrawn by its spend.
+    for pot in stored.pots:
+        assert f'href="/pots/{pot.id}"' in html
+    assert "overdrawn" in html
+    # Income 5000: outgoings 1000, savings and spends 1600, spare 2400.
+    assert "Outgoings £1,000" in html and "20%" in html
+    assert "Spare £2,400" in html and "48%" in html
+
+
+def test_the_average_month_leaves_out_the_month_in_progress(client, stored, november):
+    """Before payday the current month nets about nothing, and counting it
+    made the average read about a twelfth low."""
+    car = pot_named(stored, "Car")
+    client.post(f"/pots/{car.id}/entry", data={"amount": "1100", "on": "2026-11-02"})
+    html = client.get("/insights").text
+    figure = html[html.index("Average full month") :]
+    assert "-£27.27" in figure[:200]  # the September spend over 11 full months
+
+
+def test_insights_says_when_the_plan_spends_more_than_comes_in(client, stored, november):
+    client.post("/monthly/add", data={"kind": "outgoing", "name": "Yacht", "amount": "9000"})
+    html = client.get("/insights").text
+    assert "more than comes in" in html
+    assert 'class="split"' not in html
+
+
+def test_insights_with_nothing_in_the_document(client, november):
+    store.save(Document())
+    html = client.get("/insights").text
+    assert "No pots yet." in html
+    assert "No income recorded." in html
+
+
+def test_the_nav_links_to_insights(client):
+    assert 'href="/insights"' in client.get("/pots").text
+
+
 # --- the monthly picture ------------------------------------------------------
 
 

@@ -1,0 +1,241 @@
+{% extends "base.html" %}
+{% block title %}Insights &middot; finances{% endblock %}
+{% block subtitle %}the last 12 months of savings{% endblock %}
+{% block body %}
+<style>
+  /* Series colours, checked with the dataviz palette validator against the
+     card (#1a1a20): money in is blue and money out orange, which colour-blind
+     readers can tell apart, unlike the app's green and red. Text never wears
+     them; a swatch beside the text carries the identity. */
+  :root { --c-in: #4a90d9; --c-out: #c96a2c; --c-spare: #9a6fd6; --c-line: #7dd3a0;
+          --grid: #2c2c35; }
+
+  .chart { position: relative; height: 180px; margin: 4px 0 0; }
+  .chart svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+  .chart svg * { vector-effect: non-scaling-stroke; }
+  .chart .grid { stroke: var(--grid); stroke-width: 1; }
+  .chart .zero { stroke: var(--dim); stroke-width: 1; }
+  .chart .tick { position: absolute; left: 0; transform: translateY(-50%);
+                 font-size: 11px; color: var(--dim); font-variant-numeric: tabular-nums;
+                 pointer-events: none; padding-bottom: 1px; }
+  .chart .hit { fill: transparent; cursor: default; outline: none; }
+  .chart .hit:hover, .chart .hit:focus { fill: rgba(255, 255, 255, .05); }
+  .chart .end { position: absolute; width: 10px; height: 10px; border-radius: 50%;
+                background: var(--c-line); box-shadow: 0 0 0 2px var(--card);
+                transform: translate(-50%, -50%); pointer-events: none; }
+  .chart .end-label { position: absolute; transform: translate(-100%, -150%);
+                      font-size: 12px; font-weight: 600; white-space: nowrap;
+                      pointer-events: none; }
+  .months { position: relative; height: 18px; font-size: 11px; color: var(--dim); }
+  .months span { position: absolute; transform: translateX(-50%); top: 2px; }
+  .tip { position: absolute; top: -6px; transform: translate(-50%, -100%); z-index: 2;
+         background: #0b0b0e; border: 1px solid var(--line); border-radius: 8px;
+         padding: 6px 9px; font-size: 13px; white-space: nowrap; pointer-events: none; }
+  .tip[hidden] { display: none; }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 13px; color: var(--dim); }
+  .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 3px;
+            margin-right: 6px; vertical-align: -1px; }
+  .s-in, .c-save { background: var(--c-in); }
+  .s-out, .c-out { background: var(--c-out); }
+  .c-spare { background: var(--c-spare); }
+
+  .split { display: flex; gap: 2px; height: 28px; margin: 8px 0; }
+  .split div { border-radius: 4px; min-width: 2px; font-size: 12px; font-weight: 600;
+               color: #101014; padding: 0 6px; line-height: 28px; overflow: hidden;
+               white-space: nowrap; }
+
+  .verdict { white-space: nowrap; font-size: 13px; }
+  .verdict.warn { color: var(--warn); }
+  .verdict.bad { color: var(--bad); }
+  .verdict.good { color: var(--accent); }
+  .card h3 { margin: 0 0 2px; font-size: 15px; }
+  .card .muted.small { font-size: 13px; }
+  details.table summary { font-size: 13px; }
+</style>
+
+{% set net = paid_in + paid_out %}
+<div class="figures">
+  <div class="figure">
+    <div class="label">Saved, 12 months</div>
+    <div class="value {{ 'over' if net < 0 }}">{{ net | money }}</div>
+  </div>
+  <div class="figure">
+    <div class="label">Average full month</div>
+    <div class="value {{ 'over' if average_month < 0 }}">{{ average_month | money }}</div>
+  </div>
+  <div class="figure">
+    <div class="label">Paid in</div>
+    <div class="value">{{ paid_in | money }}</div>
+  </div>
+  <div class="figure">
+    <div class="label">Spent from pots</div>
+    <div class="value">{{ (-paid_out) | money }}</div>
+  </div>
+</div>
+
+{# --- the balance ------------------------------------------------------------ #}
+<h2>Savings balance</h2>
+<div class="card">
+  <h3>Every pot, at each month's end</h3>
+  {% set c = balance_chart %}
+  <div class="chart" data-chart>
+    <svg viewBox="0 0 {{ W }} {{ H }}" preserveAspectRatio="none" role="img"
+         aria-label="Savings balance at each month's end; the table below has the figures">
+      {% for t in c.ticks %}
+        <line class="{{ 'zero' if t.label == '£0' else 'grid' }}" x1="{{ LEFT }}" x2="{{ W - RIGHT }}" y1="{{ t.y }}" y2="{{ t.y }}"/>
+      {% endfor %}
+      <path d="{{ c.area }}" fill="var(--c-line)" fill-opacity=".1" stroke="none"/>
+      <path d="{{ c.line }}" fill="none" stroke="var(--c-line)" stroke-width="2"
+            stroke-linejoin="round" stroke-linecap="round"/>
+      {% for s in c.slots %}
+        <rect class="hit" x="{{ s.left }}" y="0" width="{{ s.width }}" height="{{ H }}"
+              tabindex="0" data-tip="{{ s.tip }}" data-x="{{ s.percent }}"/>
+      {% endfor %}
+    </svg>
+    {% for t in c.ticks %}<span class="tick" style="top:{{ t.percent }}%">{{ t.label }}</span>{% endfor %}
+    {% set last = c.points | last %}
+    <span class="end" style="left:{{ last.left }}%;top:{{ last.top }}%"></span>
+    <span class="end-label" style="left:{{ last.left }}%;top:{{ last.top }}%">{{ (flows | last).closing | money }}</span>
+    <div class="tip" hidden></div>
+  </div>
+  <div class="months">
+    {% for s in c.slots if s.show_label %}<span style="left:{{ s.percent }}%">{{ s.label }}</span>{% endfor %}
+  </div>
+  <details class="table">
+    <summary>As a table</summary>
+    <table>
+      <thead><tr><th>Month</th><th class="num">Balance</th></tr></thead>
+      <tbody>
+      {% for f in flows | reverse %}
+        <tr><td>{{ f.month.strftime('%B %Y') }}</td><td class="num">{{ f.closing | money }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </details>
+</div>
+
+{# --- in and out ------------------------------------------------------------- #}
+<h2>In and out</h2>
+<div class="card">
+  <h3>Paid into pots, and spent from them</h3>
+  <p class="muted small" style="margin:0 0 6px">Imported balances and corrections aren't counted.</p>
+  <div class="legend">
+    <span><span class="swatch s-in"></span>In</span>
+    <span><span class="swatch s-out"></span>Out</span>
+  </div>
+  {% set c = flow_chart %}
+  <div class="chart" data-chart>
+    <svg viewBox="0 0 {{ W }} {{ H }}" preserveAspectRatio="none" role="img"
+         aria-label="Money paid into and spent from pots each month; the table below has the figures">
+      {% for t in c.ticks %}
+        <line class="{{ 'zero' if t.label == '£0' else 'grid' }}" x1="{{ LEFT }}" x2="{{ W - RIGHT }}" y1="{{ t.y }}" y2="{{ t.y }}"/>
+      {% endfor %}
+      {% for b in c.paid_in if b.path %}<path d="{{ b.path }}" fill="var(--c-in)"/>{% endfor %}
+      {% for b in c.paid_out if b.path %}<path d="{{ b.path }}" fill="var(--c-out)"/>{% endfor %}
+      {% for s in c.slots %}
+        <rect class="hit" x="{{ s.left }}" y="0" width="{{ s.width }}" height="{{ H }}"
+              tabindex="0" data-tip="{{ s.tip }}" data-x="{{ s.percent }}"/>
+      {% endfor %}
+    </svg>
+    {% for t in c.ticks %}<span class="tick" style="top:{{ t.percent }}%">{{ t.label }}</span>{% endfor %}
+    <div class="tip" hidden></div>
+  </div>
+  <div class="months">
+    {% for s in c.slots if s.show_label %}<span style="left:{{ s.percent }}%">{{ s.label }}</span>{% endfor %}
+  </div>
+  <details class="table">
+    <summary>As a table</summary>
+    <table>
+      <thead><tr><th>Month</th><th class="num">In</th><th class="num">Out</th><th class="num">Net</th></tr></thead>
+      <tbody>
+      {% for f in flows | reverse %}
+        <tr>
+          <td>{{ f.month.strftime('%b %Y') }}</td>
+          <td class="num">{{ f.paid_in | money }}</td>
+          <td class="num">{{ (-f.paid_out) | money }}</td>
+          <td class="num {{ 'neg' if f.net < 0 }}">{{ f.net | money }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </details>
+</div>
+
+{# --- each pot ---------------------------------------------------------------- #}
+<h2>Pots</h2>
+<p class="muted" style="margin-top:0">An average month over the last twelve full months
+  (or as many as a newer pot has had), worst first.</p>
+<table>
+  <thead><tr><th>Pot</th><th class="num">A month</th><th class="num">Balance</th><th>Heading</th></tr></thead>
+  <tbody>
+  {% for h in health %}
+    <tr>
+      <td><a href="/pots/{{ h.pot.id }}" style="text-decoration:none">{{ h.pot.name }}</a></td>
+      <td class="num {{ 'neg' if h.average_net < 0 }}">{{ h.average_net | money }}</td>
+      <td class="num {{ 'neg' if h.balance < 0 }}">{{ h.balance | money }}</td>
+      <td>
+        {% if h.verdict == 'overdrawn' %}<span class="verdict bad">&#9888; overdrawn</span>
+        {% elif h.verdict == 'empty' %}<span class="verdict bad">&#9888; empty, still spending</span>
+        {% elif h.verdict == 'running down' %}<span class="verdict warn">&#9660; empty in ~{{ h.months_left }} mo</span>
+        {% elif h.verdict == 'new' %}<span class="verdict muted">new this month</span>
+        {% elif h.verdict == 'growing' %}<span class="verdict good">&#9650; growing</span>
+        {% else %}<span class="verdict muted">&#9644; steady</span>{% endif %}
+      </td>
+    </tr>
+  {% else %}
+    <tr><td colspan="4" class="muted">No pots yet.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+{# --- the monthly plan --------------------------------------------------------- #}
+<h2>Where the income goes</h2>
+<div class="card">
+  <h3>{{ summary.income | money }} a month, as planned</h3>
+  {% if split %}
+    <div class="split" role="img"
+         aria-label="{% for p in split %}{{ p.label }} {{ p.amount_pence | money }} ({{ p.percent }}%){{ ', ' if not loop.last }}{% endfor %}">
+      {% for p in split %}
+        <div class="{{ p.css }}" style="flex:{{ p.amount_pence }} 1 0" title="{{ p.label }}: {{ p.amount_pence | money }}">
+          {% if p.percent >= 12 %}{{ p.percent }}%{% endif %}
+        </div>
+      {% endfor %}
+    </div>
+    <div class="legend">
+      {% for p in split %}
+        <span><span class="swatch {{ p.css }}"></span>{{ p.label }} {{ p.amount_pence | money }}</span>
+      {% endfor %}
+    </div>
+  {% elif summary.income > 0 %}
+    <p class="verdict bad" style="margin:4px 0">&#9888; The plan spends {{ (-summary.spare) | money }} a month more than comes in.
+      <a href="/monthly">See In / Out</a>.</p>
+  {% else %}
+    <p class="muted">No income recorded. <a href="/monthly">Add it in In / Out</a>.</p>
+  {% endif %}
+</div>
+
+<script nonce="{{ request.state.csp_nonce }}">
+  // The tooltip: one per chart, filled from the hovered (or focused) month's
+  // data-tip. Optional: every figure is also in the table under the chart.
+  document.querySelectorAll("[data-chart]").forEach((chart) => {
+    const tip = chart.querySelector(".tip");
+    const show = (target) => {
+      tip.textContent = target.dataset.tip;
+      const x = Math.min(Math.max(parseFloat(target.dataset.x), 18), 82);
+      tip.style.left = x + "%";
+      tip.hidden = false;
+    };
+    chart.querySelectorAll("[data-tip]").forEach((target) => {
+      target.addEventListener("pointerenter", () => show(target));
+      target.addEventListener("focus", () => show(target));
+      // A tap fires pointerleave straight after, so on touch the tip stays
+      // until focus moves elsewhere.
+      target.addEventListener("pointerleave", (event) => {
+        if (event.pointerType !== "touch") tip.hidden = true;
+      });
+      target.addEventListener("blur", () => { tip.hidden = true; });
+    });
+  });
+</script>
+{% endblock %}
