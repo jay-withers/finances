@@ -1,0 +1,66 @@
+{# One month of a savings ledger, as a collapsible block: the month's totals in
+   the summary line, its entries inside. Shared by a pot's own ledger and the
+   all-pots ledger on /pots.
+
+   `pot_names` is given only for the all-pots ledger: each entry is then
+   labelled with, and links to, its pot, and there is no delete button (that
+   lives on the pot's own page, beside the entry it removes). #}
+{% macro ledger_month(m, open=false, pot_id=none, pot_names=none) %}
+{% set key = m.month.strftime('%Y-%m') %}
+<details class="month" id="month-{{ key }}" {{ 'open' if open }}>
+  <summary>
+    <span class="month-name">{{ m.month.strftime('%B %Y') }}</span>
+    <span class="month-totals">
+      {% if m.paid_in %}<span>in {{ m.paid_in | money }}</span>{% endif %}
+      {# The word says the direction, so the amount goes without its minus. #}
+      {% if m.paid_out %}<span class="neg">out {{ (-m.paid_out) | money }}</span>{% endif %}
+      {% if m.imported %}<span>imported {{ m.imported | money }}</span>{% endif %}
+      {% if m.adjusted %}<span>corrected {{ m.adjusted | money }}</span>{% endif %}
+      <span class="closing {{ 'neg' if m.closing < 0 }}" title="Balance at the end of the month">
+        &rarr; {{ m.closing | money }}
+      </span>
+    </span>
+  </summary>
+  <table>
+    <tbody>
+    {% for entry in m.entries %}
+      <tr>
+        <td class="shrink muted">{{ entry.on.strftime('%-d %b') }}</td>
+        <td>
+          {% if pot_names %}
+            <a href="/pots/{{ entry.pot_id }}" style="text-decoration:none">{{ pot_names[entry.pot_id] }}</a>
+            {% if entry.note or entry.kind == 'opening' %}
+              <br><span class="muted">{{ entry.note or 'imported' }}</span>
+            {% endif %}
+          {% else %}
+            {{ entry.note or entry.kind }}
+            {% if entry.kind == 'opening' %}<br><span class="muted">imported</span>{% endif %}
+          {% endif %}
+        </td>
+        <td class="num {{ 'neg' if entry.amount_pence < 0 }}">
+          {{ entry.amount_pence | money }}
+        </td>
+        {% if pot_id %}
+        <td class="shrink">
+          <form method="post" action="/pots/{{ pot_id }}/entry/{{ entry.id }}/delete" class="inline-form">
+            {# So the page comes back with this month still open. #}
+            <input type="hidden" name="month" value="{{ key }}">
+            <button class="tiny" type="submit">delete</button>
+          </form>
+        </td>
+        {% endif %}
+      </tr>
+    {% endfor %}
+    </tbody>
+    {% if m.paid_in and m.paid_out %}
+    <tfoot>
+      <tr>
+        <th></th><th>Net</th>
+        <th class="num {{ 'neg' if m.net < 0 }}">{{ m.net | money }}</th>
+        {% if pot_id %}<th></th>{% endif %}
+      </tr>
+    </tfoot>
+    {% endif %}
+  </table>
+</details>
+{% endmacro %}

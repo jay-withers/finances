@@ -36,6 +36,49 @@ def test_pot_balances_covers_every_pot(doc: Document):
     assert sum(balances.values()) == calc.pots_total(doc)
 
 
+def test_ledger_months_groups_newest_first_with_totals(doc: Document):
+    car = next(p for p in doc.pots if p.name == "Car")
+    doc.pot_entries += [
+        PotEntry(pot_id=car.id, on=date(2026, 9, 28), amount_pence=5_000, kind="payday"),
+        PotEntry(pot_id=car.id, on=date(2026, 11, 3), amount_pence=1_000, kind="deposit"),
+    ]
+    months = calc.ledger_months(doc.entries_for(car.id))
+
+    # October had nothing, so it isn't listed.
+    assert [m.month for m in months] == [date(2026, 11, 1), date(2026, 9, 1), date(2026, 8, 1)]
+    nov, sep, aug = months
+    assert (sep.paid_in, sep.paid_out, sep.net, sep.imported) == (5_000, -30_000, -25_000, 0)
+    assert [e.on for e in sep.entries] == [date(2026, 9, 28), date(2026, 9, 2)]
+    # The import is not money moved that month, but it is in the balance.
+    assert (aug.paid_in, aug.imported, aug.closing) == (0, 20_000, 20_000)
+    assert sep.closing == -5_000
+    assert nov.closing == calc.pot_balance(doc, car.id)
+
+
+def test_a_correction_is_not_counted_as_saving(doc: Document):
+    car = next(p for p in doc.pots if p.name == "Car")
+    doc.pot_entries.append(
+        PotEntry(pot_id=car.id, on=date(2026, 9, 30), amount_pence=30_000, kind="adjustment")
+    )
+    sep = calc.ledger_months(doc.entries_for(car.id))[0]
+    assert (sep.paid_in, sep.paid_out, sep.adjusted, sep.closing) == (0, -30_000, 30_000, 20_000)
+
+
+def test_archiving_a_pot_does_not_rewrite_past_months(doc: Document):
+    before = calc.pots_ledger_months(doc)
+    doc.pots[1].archived = True  # Car, which spent in September
+    assert calc.pots_ledger_months(doc) == before
+
+
+def test_pots_ledger_months_leaves_out_entries_for_a_deleted_pot(doc: Document):
+    doc.pot_entries.append(PotEntry(pot_id="gone", on=date(2026, 12, 1), amount_pence=1))
+    assert calc.pots_ledger_months(doc)[0].month == date(2026, 9, 1)
+
+
+def test_ledger_months_of_nothing_is_empty():
+    assert calc.ledger_months([]) == []
+
+
 def test_payday_pots_excludes_the_general_pot(doc: Document):
     """The spreadsheet did the same, by summing B2:B9 rather than B2:B10."""
     names = [p.name for p in calc.payday_pots(doc)]
@@ -503,6 +546,7 @@ def ledgers(draw: st.DrawFn) -> Document:
                 pot_id=st.sampled_from([*POT_IDS, "deleted"]),
                 on=DAY,
                 amount_pence=AMOUNT,
+                kind=st.sampled_from(["payday", "deposit", "spend", "opening", "adjustment"]),
             ),
             max_size=40,
         )
@@ -518,6 +562,21 @@ def test_every_balance_is_its_ledger_and_the_total_is_the_live_pots(doc: Documen
         assert balances[pot.id] == calc.pot_balance(doc, pot.id)
     live = {p.id for p in doc.pots if not p.archived}
     assert calc.pots_total(doc) == sum(e.amount_pence for e in doc.pot_entries if e.pot_id in live)
+
+
+@given(ledgers())
+def test_ledger_months_account_for_every_entry_once(doc: Document):
+    """Grouping loses nothing, and the newest month ends on every pot's balance."""
+    months = calc.pots_ledger_months(doc)
+    balances = calc.pot_balances(doc)
+    grouped = [e.id for m in months for e in m.entries]
+    assert sorted(grouped) == sorted(e.id for e in doc.pot_entries if e.pot_id in balances)
+    assert [m.month for m in months] == sorted({m.month for m in months}, reverse=True)
+    for m in months:
+        assert all(e.on.replace(day=1) == m.month for e in m.entries)
+        assert m.paid_in >= 0 >= m.paid_out
+        assert m.net + m.imported + m.adjusted == sum(e.amount_pence for e in m.entries)
+    assert (months[0].closing if months else 0) == sum(balances.values())
 
 
 def incomes_active(doc: Document) -> list[int]:

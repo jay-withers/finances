@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 import pathlib
+import re
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from typing import Any
@@ -60,6 +61,10 @@ class ConflictResponse(Exception):
 
 def _today() -> date:
     return datetime.now(UTC).date()
+
+
+# A `YYYY-MM` month key, as the ledger's month blocks are named.
+_MONTH = re.compile(r"\d{4}-\d{2}")
 
 
 def _back(path: str) -> RedirectResponse:
@@ -418,16 +423,24 @@ def pots_page(request: Request) -> Any:
             "balances": balances,
             "pots_total": calc.pots_total(doc),
             "monthly_total": calc.pots_monthly_total(doc),
+            "months": calc.pots_ledger_months(doc),
+            "pot_names": {p.id: p.name for p in doc.pots},
         },
     )
 
 
 @router.get("/pots/{pot_id}", response_class=HTMLResponse, include_in_schema=False)
-def pot_page(request: Request, pot_id: str) -> Any:
+def pot_page(request: Request, pot_id: str, month: str = "") -> Any:
+    """A pot and its ledger by month. `month=YYYY-MM` opens that month instead
+    of the newest, which is how a delete brings you back where you were. A
+    month with nothing left in it falls back to the newest.
+    """
     doc, _etag = store.load()
     pot = doc.pot(pot_id)
     if pot is None:
         return _back("/pots")
+    months = calc.ledger_months(doc.entries_for(pot_id))
+    keys = {m.month.strftime("%Y-%m") for m in months}
     return templates.TemplateResponse(
         request,
         "pot.html",
@@ -436,7 +449,8 @@ def pot_page(request: Request, pot_id: str) -> Any:
             "pot": pot,
             "today": _today(),
             "balance": calc.pot_balance(doc, pot_id),
-            "entries": doc.entries_for(pot_id),
+            "months": months,
+            "open_month": month if month in keys else "",
         },
     )
 
@@ -508,7 +522,7 @@ def pot_entry(
 
 
 @router.post("/pots/{pot_id}/entry/{entry_id}/delete", include_in_schema=False)
-def pot_entry_delete(pot_id: str, entry_id: str) -> Any:
+def pot_entry_delete(pot_id: str, entry_id: str, month: str = Form(default="")) -> Any:
     def change(doc: Document) -> Document:
         doc.pot_entries = [e for e in doc.pot_entries if e.id != entry_id]
         # Any payday run that created it stops claiming it, so re-running that
@@ -519,7 +533,9 @@ def pot_entry_delete(pot_id: str, entry_id: str) -> Any:
         return doc
 
     _apply(change)
-    return _back(f"/pots/{pot_id}")
+    # Checked, since it lands in the Location header.
+    reopen = f"?month={month}" if _MONTH.fullmatch(month) else ""
+    return _back(f"/pots/{pot_id}{reopen}")
 
 
 # --- the monthly picture ------------------------------------------------------
