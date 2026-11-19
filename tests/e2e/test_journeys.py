@@ -14,7 +14,7 @@ from .conftest import PASSCODE
 # Every screen in the nav, with the seeded document behind it. A page that
 # renders but trips the CSP, or throws in its script, fails the autouse
 # console check.
-PAGES = ["/", "/payday", "/pots", "/monthly", "/renewals", "/wealth"]
+PAGES = ["/", "/payday", "/pots", "/monthly", "/renewals", "/wealth", "/insights"]
 
 
 def test_a_page_without_a_session_goes_to_login(page: Page) -> None:

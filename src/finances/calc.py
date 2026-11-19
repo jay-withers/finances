@@ -596,3 +596,146 @@ def attention(doc: Document, today: date) -> Attention:
 
     quiet = len([r for r in doc.renewals if not is_due(r, today)])
     return Attention(items=items, quiet_renewals=quiet)
+
+
+# --- insights -----------------------------------------------------------------
+#
+# What the insights page shows. All of it is read off the pot ledgers, with the
+# same rules as the ledger's month view: imports and corrections are not money
+# that moved, and archived pots stay in the history.
+
+
+def month_starts(today: date, count: int) -> list[date]:
+    """The 1st of each of the last `count` months, oldest first, ending with
+    `today`'s month."""
+    year, month = today.year, today.month
+    starts: list[date] = []
+    for _ in range(count):
+        starts.append(date(year, month, 1))
+        year, month = (year, month - 1) if month > 1 else (year - 1, 12)
+    return starts[::-1]
+
+
+@dataclass(frozen=True)
+class MonthFlow:
+    """One month of the insights charts. Empty months are zeros, not gaps."""
+
+    month: date
+    paid_in: int
+    paid_out: int  # zero or negative
+    closing: int  # every pot's balance at the month's end
+
+    @property
+    def net(self) -> int:
+        return self.paid_in + self.paid_out
+
+
+def monthly_flows(doc: Document, today: date, months: int = 12) -> list[MonthFlow]:
+    """The last `months` months of every pot together, oldest first.
+
+    Unlike `pots_ledger_months`, a month with nothing in it is listed with the
+    balance carried forward: a chart needs every month, a ledger does not.
+    """
+    starts = month_starts(today, months)
+    known = {p.id for p in doc.pots}
+    by_month = {m.month: m for m in pots_ledger_months(doc)}
+    balance = sum(e.amount_pence for e in doc.pot_entries if e.pot_id in known and e.on < starts[0])
+    flows: list[MonthFlow] = []
+    for start in starts:
+        ledger = by_month.get(start)
+        if ledger is not None:
+            balance = ledger.closing
+        flows.append(
+            MonthFlow(
+                month=start,
+                paid_in=ledger.paid_in if ledger else 0,
+                paid_out=ledger.paid_out if ledger else 0,
+                closing=balance,
+            )
+        )
+    return flows
+
+
+def average(total: int, count: int) -> int:
+    """`total / count` rounded to the nearest penny, half away from zero, in
+    integers: money never goes through a float."""
+    magnitude = (abs(total) * 2 + count) // (count * 2)
+    return magnitude if total >= 0 else -magnitude
+
+
+@dataclass(frozen=True)
+class PotHealth:
+    """How one pot is doing, averaged over the last full months."""
+
+    pot: Pot
+    balance: int
+    average_in: int
+    average_out: int  # zero or negative
+    # Set when the pot is shrinking: whole months until it empties at the
+    # average rate. None when it is growing, flat, or already empty.
+    months_left: int | None
+    # The full months the averages cover: the window, or fewer for a pot
+    # younger than it. Zero for a pot whose first entry is this month.
+    months_of_history: int = 0
+
+    @property
+    def average_net(self) -> int:
+        return self.average_in + self.average_out
+
+    @property
+    def verdict(self) -> str:
+        """`overdrawn`, `empty`, `running down`, `new`, `growing` or `steady`."""
+        if self.balance < 0:
+            return "overdrawn"
+        if self.balance == 0 and self.average_net < 0:
+            return "empty"
+        if self.months_left is not None:
+            return "running down"
+        if self.months_of_history == 0:
+            return "new"
+        return "growing" if self.average_net > 0 else "steady"
+
+
+def pot_health(doc: Document, today: date, months: int = 12) -> list[PotHealth]:
+    """Every live pot's average month over the `months` full months before
+    `today`'s, worst first: overdrawn, then soonest empty, then the rest.
+
+    A year by default, because pot spending is lumpy (one car service, one
+    holiday) and six months can miss the spend a pot is saving for entirely.
+    The current month is left out, so a pot isn't judged on a half month, and
+    a pot younger than the window is averaged over the months it has existed:
+    two months of spending spread over twelve would say it lasts six times
+    longer than it will.
+    """
+    current = date(today.year, today.month, 1)
+    balances = pot_balances(doc)
+    results: list[PotHealth] = []
+    for pot in doc.pots:
+        if pot.archived:
+            continue
+        entries = [e for e in doc.pot_entries if e.pot_id == pot.id]
+        born = min((e.on for e in entries), default=today)
+        age = (current.year - born.year) * 12 + current.month - born.month
+        history = max(0, min(months, age))
+        first = month_starts(today, history + 1)[0]
+        moved = [
+            e.amount_pence
+            for e in entries
+            if first <= e.on < current and e.kind not in ("opening", "adjustment")
+        ]
+        average_in = average(sum(a for a in moved if a > 0), history) if history else 0
+        average_out = average(sum(a for a in moved if a < 0), history) if history else 0
+        net, balance = average_in + average_out, balances[pot.id]
+        months_left = -(balance // net) if net < 0 and balance > 0 else None
+        results.append(PotHealth(pot, balance, average_in, average_out, months_left, history))
+
+    def urgency(health: PotHealth) -> tuple[int, int, str]:
+        if health.balance < 0:
+            return (0, health.balance, health.pot.name)
+        if health.verdict == "empty":
+            return (0, 0, health.pot.name)
+        if health.months_left is not None:
+            return (1, health.months_left, health.pot.name)
+        return (2, -health.balance, health.pot.name)
+
+    return sorted(results, key=urgency)

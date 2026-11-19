@@ -13,7 +13,9 @@ It exists to make three recurring jobs quicker and harder to forget:
   have gone stale.
 
 The dashboard shows what needs attention right now; a scheduled job emails the
-same list every Sunday evening.
+same list every Sunday evening. **Insights** charts the last twelve months of
+savings: the balance, what went in and out, how each pot is heading, and where
+the monthly income goes.
 
 ## Running it locally
 
@@ -77,7 +79,8 @@ migration time they had drifted £28 apart.
 | | |
 |---|---|
 | `src/finances/model.py` | The document — everything, as held in the blob |
-| `src/finances/calc.py` | Balances, totals and what needs attention |
+| `src/finances/calc.py` | Balances, totals, what needs attention, and the insights figures |
+| `src/finances/charts.py` | The insights charts' geometry, drawn as inline SVG |
 | `src/finances/money.py` | Pence in, formatted strings out |
 | `src/finances/store.py` | Blob load/save, with an ETag precondition |
 | `src/finances/importer.py` | The one-off spreadsheet migration |

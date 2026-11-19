@@ -37,7 +37,7 @@
     background: var(--card); border: 1px solid var(--line);
     border-radius: var(--radius); padding: 14px; margin-bottom: 12px;
   }
-  /* The nav wraps rather than scrolls: six destinations fit two rows on the
+  /* The nav wraps rather than scrolls: seven destinations fit two rows on the
      narrowest phone, and a horizontal scroller hides whatever is off-screen. */
   nav { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }
   nav a {
@@ -140,6 +140,7 @@
   <a href="/monthly"  class="{{ 'on' if path.startswith('/monthly') }}">In / Out</a>
   <a href="/renewals" class="{{ 'on' if path.startswith('/renewals') }}">Renewals</a>
   <a href="/wealth"   class="{{ 'on' if path.startswith('/wealth') }}">Pensions</a>
+  <a href="/insights" class="{{ 'on' if path.startswith('/insights') }}">Insights</a>
 </nav>
 {% endblock %}
 {% block body %}{% endblock %}
