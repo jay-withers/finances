@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_ledger.html" import ledger_month %}
 {% block subtitle %}{{ pots_total | money }} across {{ doc.pots | length }}{% endblock %}
 {% block body %}
 
@@ -56,4 +57,13 @@
     <button type="submit">Add</button>
   </form>
 </details>
+
+{% if months %}
+<h2>By month</h2>
+{# Every pot's entries together, archived ones too, so "what went in and out
+   of savings in March" is one line rather than a visit to every pot. #}
+{% for m in months %}
+  {{ ledger_month(m, open=loop.first, pot_names=pot_names) }}
+{% endfor %}
+{% endif %}
 {% endblock %}

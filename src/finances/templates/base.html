@@ -107,6 +107,20 @@
   details { margin-bottom: 12px; }
   summary { cursor: pointer; color: var(--dim); font-size: 14px; padding: 6px 0; }
   .muted { color: var(--dim); font-size: 14px; }
+  /* A ledger month: the name on the left, its totals wrapping on the right. */
+  details.month { margin-bottom: 4px; border-bottom: 1px solid var(--line); }
+  details.month > summary { display: flex; flex-wrap: wrap; justify-content: space-between;
+                            gap: 4px 12px; color: var(--text); padding: 10px 0;
+                            list-style: none; }
+  /* The marker is drawn by .month-name::before; WebKit would add its own. */
+  details.month > summary::-webkit-details-marker { display: none; }
+  .month-name { font-weight: 600; }
+  .month-name::before { content: "▸ "; color: var(--dim); }
+  details[open] .month-name::before { content: "▾ "; }
+  .month-totals { display: flex; flex-wrap: wrap; gap: 4px 12px; color: var(--dim);
+                  font-variant-numeric: tabular-nums; }
+  .month-totals .closing { color: var(--text); font-weight: 600; }
+  .month-totals .neg, .month-totals .closing.neg { color: var(--bad); }
   .inline-form { display: inline; }
 </style>
 </head>

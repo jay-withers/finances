@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_ledger.html" import ledger_month %}
 {% block title %}{{ pot.name }} &middot; finances{% endblock %}
 {% block subtitle %}<a href="/pots">&larr; pots</a>{% endblock %}
 {% block body %}
@@ -47,29 +48,13 @@
 </form>
 
 <h2>Ledger</h2>
-<table>
-  <tbody>
-  {% for entry in entries %}
-    <tr>
-      <td class="shrink muted">{{ entry.on.strftime('%-d %b %y') }}</td>
-      <td>
-        {{ entry.note or entry.kind }}
-        {% if entry.kind == 'opening' %}<br><span class="muted">imported</span>{% endif %}
-      </td>
-      <td class="num {{ 'neg' if entry.amount_pence < 0 }}">
-        {{ entry.amount_pence | money }}
-      </td>
-      <td class="shrink">
-        <form method="post" action="/pots/{{ pot.id }}/entry/{{ entry.id }}/delete" class="inline-form">
-          <button class="tiny" type="submit">delete</button>
-        </form>
-      </td>
-    </tr>
-  {% else %}
-    <tr><td class="muted">Nothing recorded yet.</td></tr>
-  {% endfor %}
-  </tbody>
-</table>
+{# By month, newest open: the totals sit on each month's line, so a year of
+   entries reads as twelve lines until one is opened. #}
+{% for m in months %}
+  {{ ledger_month(m, open=(m.month.strftime('%Y-%m') == open_month if open_month else loop.first), pot_id=pot.id) }}
+{% else %}
+  <p class="muted">Nothing recorded yet.</p>
+{% endfor %}
 
 <details>
   <summary>Edit this pot</summary>

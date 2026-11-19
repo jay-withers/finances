@@ -221,6 +221,79 @@ def test_pots_page_lists_largest_balance_first(client, stored):
     assert "/move" not in html
 
 
+def test_pot_page_groups_its_ledger_by_month(client, stored):
+    car = pot_named(stored, "Car")
+    client.post(
+        f"/pots/{car.id}/entry",
+        data={"amount": "12.34", "kind": "deposit", "on": "2026-10-05", "note": "refund"},
+    )
+
+    html = client.get(f"/pots/{car.id}").text
+
+    # Newest month first, and only the newest open.
+    assert html.index("October 2026") < html.index("September 2026") < html.index("August 2026")
+    assert html.count('" open>') == 1
+    assert "in £12.34" in html
+    assert "imported £200" in html
+    assert "refund" in html
+    assert f"/pots/{car.id}/entry/" in html  # the delete buttons survive
+
+
+def test_deleting_an_entry_comes_back_to_its_month(client, stored):
+    car = pot_named(stored, "Car")
+    for on in ("2026-09-10", "2026-09-11", "2026-10-05"):
+        client.post(f"/pots/{car.id}/entry", data={"amount": "1", "on": on})
+    doomed = next(e for e in reload().pot_entries if e.on == date(2026, 9, 10))
+
+    response = client.post(
+        f"/pots/{car.id}/entry/{doomed.id}/delete",
+        data={"month": "2026-09"},
+        follow_redirects=False,
+    )
+    assert response.headers["location"] == f"/pots/{car.id}?month=2026-09"
+
+    html = client.get(response.headers["location"]).text
+    assert html.count('<details class="month"') == 3
+    assert '<details class="month" id="month-2026-09" open' in html
+    assert '<details class="month" id="month-2026-10" open' not in html
+
+
+def test_a_month_not_in_the_ledger_opens_the_newest(client, stored):
+    car = pot_named(stored, "Car")
+    for month in ("nonsense", "2020-01"):
+        html = client.get(f"/pots/{car.id}?month={month}").text
+        assert '<details class="month" id="month-2026-09" open' in html
+
+
+def test_a_month_that_is_not_a_month_is_not_put_in_the_redirect(client, stored):
+    car = pot_named(stored, "Car")
+    entry = next(e for e in stored.pot_entries if e.pot_id == car.id)
+    response = client.post(
+        f"/pots/{car.id}/entry/{entry.id}/delete",
+        data={"month": "x\r\nSet-Cookie: a=b"},
+        follow_redirects=False,
+    )
+    assert response.headers["location"] == f"/pots/{car.id}"
+
+
+def test_pot_page_with_no_entries_says_so(client):
+    client.post("/pots/add", data={"name": "Empty", "monthly": ""})
+    pot = pot_named(reload(), "Empty")
+    assert "Nothing recorded yet." in client.get(f"/pots/{pot.id}").text
+
+
+def test_pots_page_has_every_pot_by_month(client, stored):
+    html = client.get("/pots").text
+    by_month = html[html.index("By month") :]
+    assert "September 2026" in by_month and "August 2026" in by_month
+    # Labelled with the pot it belongs to, and no delete from here.
+    assert ">Car</a>" in by_month
+    assert "/delete" not in by_month
+    assert "imported" in by_month
+    # "out" says the direction; a minus as well would read as money coming back.
+    assert "out £300" in by_month and "out -£300" not in by_month
+
+
 def test_unknown_pot_redirects_rather_than_500s(client):
     assert client.get("/pots/nope").status_code == 200
 

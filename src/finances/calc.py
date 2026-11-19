@@ -71,6 +71,73 @@ def pots_monthly_total(doc: Document) -> int:
     return sum(p.monthly_pence for p in payday_pots(doc))
 
 
+@dataclass(frozen=True)
+class LedgerMonth:
+    """One calendar month of a ledger, with its totals.
+
+    Imports (`opening`) and corrections (`adjustment`) are kept apart from
+    `paid_in`/`paid_out`: neither is money that moved that month, and counting
+    the import would make its month look like the household saved thousands.
+    `closing` is the running balance at month end, everything included, so the
+    newest month's closing is the balance today.
+    """
+
+    month: date  # the 1st of the month
+    entries: list[PotEntry]  # newest first
+    paid_in: int
+    paid_out: int  # zero or negative
+    imported: int
+    adjusted: int
+    closing: int
+
+    @property
+    def net(self) -> int:
+        """What moved that month: `paid_in + paid_out`."""
+        return self.paid_in + self.paid_out
+
+
+def ledger_months(entries: list[PotEntry]) -> list[LedgerMonth]:
+    """`entries` grouped by calendar month, newest month first.
+
+    Months with nothing recorded are left out rather than listed empty: a pot
+    that sat untouched for a year would otherwise be twelve blank headings.
+    """
+    by_month: dict[date, list[PotEntry]] = {}
+    for entry in sorted(entries, key=lambda e: (e.on, e.id)):
+        by_month.setdefault(entry.on.replace(day=1), []).append(entry)
+
+    months: list[LedgerMonth] = []
+    balance = 0
+    for month, items in sorted(by_month.items()):
+        moved = [e.amount_pence for e in items if e.kind not in ("opening", "adjustment")]
+        balance += sum(e.amount_pence for e in items)
+        months.append(
+            LedgerMonth(
+                month=month,
+                entries=items[::-1],
+                paid_in=sum(a for a in moved if a > 0),
+                paid_out=sum(a for a in moved if a < 0),
+                imported=sum(e.amount_pence for e in items if e.kind == "opening"),
+                adjusted=sum(e.amount_pence for e in items if e.kind == "adjustment"),
+                closing=balance,
+            )
+        )
+    return months[::-1]
+
+
+def pots_ledger_months(doc: Document) -> list[LedgerMonth]:
+    """Every pot's ledger, merged and grouped by month.
+
+    Archived pots stay in: archiving is about what happens next, and taking
+    their entries out would rewrite the totals of months they were live in.
+    So the newest closing is every pot's balance, which is `pots_total` plus
+    whatever an archived pot still holds (normally nothing). Entries for a pot
+    that no longer exists are left out, as `pot_balances` leaves them out.
+    """
+    known = {p.id for p in doc.pots}
+    return ledger_months([e for e in doc.pot_entries if e.pot_id in known])
+
+
 def household_payday(today: date) -> date:
     """The date both incomes have landed for `today`'s month.
 
