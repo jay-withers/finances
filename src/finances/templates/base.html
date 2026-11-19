@@ -37,7 +37,7 @@
     background: var(--card); border: 1px solid var(--line);
     border-radius: var(--radius); padding: 14px; margin-bottom: 12px;
   }
-  /* The nav wraps rather than scrolls: seven destinations fit two rows on the
+  /* The nav wraps rather than scrolls: eight destinations fit two rows on the
      narrowest phone, and a horizontal scroller hides whatever is off-screen. */
   nav { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }
   nav a {
@@ -134,7 +134,8 @@
    remember to pass. `startswith` so /pots/<id> still lights up Savings. #}
 {% set path = request.url.path %}
 <nav>
-  <a href="/"         class="{{ 'on' if path == '/' }}">Dashboard</a>
+  <a href="/"         class="{{ 'on' if path == '/' }}">Home</a>
+  <a href="/today"    class="{{ 'on' if path.startswith('/today') }}">Today</a>
   <a href="/payday"   class="{{ 'on' if path.startswith('/payday') }}">Payday</a>
   <a href="/pots"     class="{{ 'on' if path.startswith('/pots') }}">Savings</a>
   <a href="/monthly"  class="{{ 'on' if path.startswith('/monthly') }}">In / Out</a>

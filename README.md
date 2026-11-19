@@ -12,8 +12,9 @@ It exists to make three recurring jobs quicker and harder to forget:
 - **Wealth** — record a valuation each quarter, and be told when the figures
   have gone stale.
 
-The dashboard shows what needs attention right now; a scheduled job emails the
-same list every Sunday evening. **Insights** charts the last twelve months of
+The home screen is a tile for each area, each saying whether it needs
+opening. **Today** lists what needs attention right now, and a scheduled job
+emails the same list every Sunday evening. **Insights** charts the last twelve months of
 savings: the balance, what went in and out, how each pot is heading, and where
 the monthly income goes.
 

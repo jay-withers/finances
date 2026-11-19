@@ -259,23 +259,169 @@ def manifest() -> JSONResponse:
     )
 
 
-# --- dashboard ----------------------------------------------------------------
+# --- home and today -----------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Tile:
+    """One area on the home screen: where it goes, and the one figure or
+    sentence that says whether it needs opening."""
+
+    title: str
+    href: str
+    value: str
+    detail: str = ""
+    # "" for nothing to see, "warn" for something to do, "urgent" for
+    # something overdue. Drives the tile's edge colour, beside its words.
+    state: str = ""
+
+
+def _tiles(doc: Document, today: date) -> list[Tile]:
+    attention = calc.attention(doc, today)
+    recent = calc.recent_movements(doc, today)
+    if attention.items:
+        first = attention.items[0]
+        today_tile = Tile(
+            "Today",
+            "/today",
+            f"{calc.plural(len(attention.items), 'thing')} to look at",
+            first.title
+            if len(attention.items) == 1
+            else f"{first.title}, and {len(attention.items) - 1} more",
+            "urgent" if any(i.urgent for i in attention.items) else "warn",
+        )
+    else:
+        today_tile = Tile(
+            "Today",
+            "/today",
+            "All clear",
+            f"{calc.plural(len(recent), 'movement')} in the last 7 days",
+        )
+
+    month = calc.current_month(today)
+    payday = calc.household_payday(today)
+    run = doc.payday_run_for(month)
+    if not calc.payday_pots(doc):
+        payday_tile = Tile("Payday", "/payday", "No pots to top up")
+    elif run is not None:
+        payday_tile = Tile("Payday", "/payday", f"Done for {today:%B}", f"run {run.run_on:%-d %b}")
+    elif today < payday:
+        payday_tile = Tile(
+            "Payday",
+            "/payday",
+            f"Due {payday:%-d %b}",
+            f"{format_money(calc.pots_monthly_total(doc))} to top up",
+        )
+    else:
+        late = (today - payday).days >= 1
+        payday_tile = Tile(
+            "Payday",
+            "/payday",
+            "Not yet run",
+            f"{format_money(calc.pots_monthly_total(doc))} to top up",
+            "urgent" if late else "warn",
+        )
+
+    balances = calc.pot_balances(doc)
+    live = [p for p in doc.pots if not p.archived]
+    overdrawn = [p for p in live if balances[p.id] < 0]
+    savings_tile = Tile(
+        "Savings",
+        "/pots",
+        format_money(calc.pots_total(doc)),
+        f"{calc.plural(len(overdrawn), 'pot')} overdrawn"
+        if overdrawn
+        else f"across {calc.plural(len(live), 'pot')}",
+        "urgent" if overdrawn else "",
+    )
+
+    summary = calc.summary(doc)
+    money_tile = Tile(
+        "In / Out",
+        "/monthly",
+        format_money(summary.spare),
+        "spare a month" if summary.spare >= 0 else "a month more out than in",
+        "urgent" if summary.spare < 0 else "",
+    )
+
+    # A due renewal (expired ones included) is named first, so the tile's
+    # colour and its words are about the same thing.
+    due = calc.due_renewals(doc, today)
+    upcoming = calc.next_renewal(doc, today)
+    if due:
+        renewal = due[0]
+        days = calc.days_until(renewal, today) or 0
+        when = (
+            f"expired {calc.plural(-days, 'day')} ago"
+            if days < 0
+            else "today"
+            if days == 0
+            else f"in {calc.plural(days, 'day')}"
+        )
+        # Red from two weeks out, as the attention panel has it.
+        renewal_tile = Tile(
+            "Renewals", "/renewals", renewal.kind, when, "urgent" if days <= 14 else "warn"
+        )
+    elif upcoming is not None:
+        renewal, days = upcoming
+        renewal_tile = Tile("Renewals", "/renewals", renewal.kind, f"in {calc.plural(days, 'day')}")
+    else:
+        renewal_tile = Tile(
+            "Renewals", "/renewals", calc.plural(len(doc.renewals), "renewal"), "none coming up"
+        )
+
+    stale = calc.stale_wealth(doc, today) is not None
+    wealth_tile = Tile(
+        "Pensions",
+        "/wealth",
+        format_money(calc.wealth_total(doc)) if doc.wealth_accounts else "None yet",
+        "figures out of date" if stale else calc.plural(len(doc.wealth_accounts), "account"),
+        "warn" if stale else "",
+    )
+
+    flows = calc.monthly_flows(doc, today)
+    saved = sum(f.net for f in flows)
+    insights_tile = Tile(
+        "Insights",
+        "/insights",
+        format_money(saved),
+        "saved over 12 months" if saved >= 0 else "more spent than saved, 12 months",
+    )
+
+    return [
+        today_tile,
+        payday_tile,
+        savings_tile,
+        money_tile,
+        renewal_tile,
+        wealth_tile,
+        insights_tile,
+    ]
 
 
 @router.get("/", response_class=HTMLResponse, include_in_schema=False)
 def index(request: Request) -> Any:
+    """Home: a tile for each area, each saying whether it needs opening."""
+    doc, _etag = store.load()
+    today = _today()
+    return templates.TemplateResponse(
+        request, "home.html", {"today": today, "tiles": _tiles(doc, today)}
+    )
+
+
+@router.get("/today", response_class=HTMLResponse, include_in_schema=False)
+def today_page(request: Request) -> Any:
+    """What needs attention, and what moved this week."""
     doc, _etag = store.load()
     today = _today()
     return templates.TemplateResponse(
         request,
-        "dashboard.html",
+        "today.html",
         {
             "doc": doc,
             "today": today,
             "attention": calc.attention(doc, today),
             "recent": calc.recent_movements(doc, today),
-            "pots_total": calc.pots_total(doc),
-            "wealth_total": calc.wealth_total(doc),
         },
     )
 

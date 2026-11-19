@@ -91,10 +91,12 @@ def test_html_escapes_user_supplied_text(today: date):
     assert "&lt;script&gt;" in composed.html
 
 
-def test_app_url_is_included_when_given(doc: Document, today: date):
-    composed = digest.compose(doc, today, app_url="https://finances.example.uk")
-    assert "https://finances.example.uk" in composed.text
-    assert 'href="https://finances.example.uk"' in composed.html
+def test_app_url_links_to_the_today_page(doc: Document, today: date):
+    """The email is the Today page's list; the root is the home tiles."""
+    for url in ("https://finances.example.uk", "https://finances.example.uk/"):
+        composed = digest.compose(doc, today, app_url=url)
+        assert "https://finances.example.uk/today" in composed.text
+        assert 'href="https://finances.example.uk/today"' in composed.html
 
 
 def test_send_skips_with_no_recipient(monkeypatch):

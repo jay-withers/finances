@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 
 from .model import Document, Pot, PotEntry, Renewal, WealthAccount, WealthSnapshot
+from .money import format_money
 from .settings import settings
 
 
@@ -41,7 +42,7 @@ def pot_balances(doc: Document) -> dict[str, int]:
 
     One pass over the entries rather than one pass per pot: the difference is
     irrelevant at this size, but it means adding a pot cannot make the
-    dashboard quadratic.
+    home screen quadratic.
     """
     balances = {p.id: 0 for p in doc.pots}
     for entry in doc.pot_entries:
@@ -194,7 +195,7 @@ def recent_movements(doc: Document, today: date, days: int = 7) -> list[Movement
         moves.append(Movement(on, label, sum(e.amount_pence for e in entries), "/payday"))
 
     # A run where every pot sat the month out leaves no entries to collapse, but
-    # it still happened, and the dashboard's "not yet run" nag clears because of it.
+    # it still happened, and the Today page's "not yet run" nag clears because of it.
     for run in doc.payday_runs:
         if not run.entry_ids and since <= run.run_on <= today:
             moves.append(Movement(run.run_on, "Payday \u00b7 nothing moved", 0, "/payday"))
@@ -304,6 +305,19 @@ def renewals_by_date(doc: Document, today: date) -> list[Renewal]:
         doc.renewals,
         key=lambda r: (r.rolling or r.expires_on is None, r.expires_on or date.max, r.kind),
     )
+
+
+def next_renewal(doc: Document, today: date) -> tuple[Renewal, int] | None:
+    """The soonest renewal still ahead (today counts), with its days to go.
+
+    Rolling ones never renew, and ones already expired are the attention
+    panel's job, not this.
+    """
+    for renewal in renewals_by_date(doc, today):
+        days = days_until(renewal, today)
+        if days is not None and days >= 0:
+            return renewal, days
+    return None
 
 
 def due_renewals(doc: Document, today: date) -> list[Renewal]:
@@ -503,12 +517,30 @@ def oldest_wealth_snapshot(doc: Document) -> tuple[WealthAccount, WealthSnapshot
     return min(dated, key=lambda pair: pair[1].as_of)
 
 
+def stale_wealth(doc: Document, today: date) -> tuple[WealthAccount, WealthSnapshot, int] | None:
+    """The most out-of-date valuation and its age in days, when it is older
+    than `wealth_stale_days`. The one rule the attention panel and the home
+    screen's Pensions tile both read."""
+    oldest = oldest_wealth_snapshot(doc)
+    if oldest is None:
+        return None
+    account, snapshot = oldest
+    age = (today - snapshot.as_of).days
+    return (account, snapshot, age) if age > settings().wealth_stale_days else None
+
+
+def plural(count: int, noun: str) -> str:
+    """`"1 day"`, `"2 days"`. The attention panel and the home tiles share it,
+    so the same renewal never reads "1 days" in one place and "1 day" in another."""
+    return f"{count} {noun}{'' if count == 1 else 's'}"
+
+
 # --- what needs attention -----------------------------------------------------
 
 
 @dataclass(frozen=True)
 class Item:
-    """One thing on the dashboard's attention panel.
+    """One thing on the Today page's attention panel.
 
     `urgent` drives colour only. Everything here is worth reading; some of it
     is worth reading first.
@@ -516,7 +548,7 @@ class Item:
 
     title: str
     detail: str = ""
-    href: str = "/"
+    href: str = "/today"
     urgent: bool = False
 
 
@@ -540,7 +572,9 @@ def attention(doc: Document, today: date) -> Attention:
 
     month = current_month(today)
     payday_date = household_payday(today)
-    if doc.pots and doc.payday_run_for(month) is None and today >= payday_date:
+    # The pots a run would top up, not every pot: with all of them archived or
+    # excluded there is nothing to run, so nothing to nag about.
+    if payday_pots(doc) and doc.payday_run_for(month) is None and today >= payday_date:
         items.append(
             Item(
                 title=f"Payday not yet run for {today:%B %Y}",
@@ -559,28 +593,26 @@ def attention(doc: Document, today: date) -> Attention:
         # it changes nothing.
         assert days is not None  # noqa: S101
         if days < 0:
-            detail = f"expired {-days} days ago"
+            detail = f"expired {plural(-days, 'day')} ago"
         elif days == 0:
             detail = "expires today"
         else:
-            detail = f"in {days} days"
+            detail = f"in {plural(days, 'day')}"
         if renewal.company:
             detail = f"{renewal.company} — {detail}"
         items.append(Item(title=renewal.kind, detail=detail, href="/renewals", urgent=days <= 14))
 
-    oldest = oldest_wealth_snapshot(doc)
-    if oldest is not None:
-        account, snapshot = oldest
-        age = (today - snapshot.as_of).days
-        if age > settings().wealth_stale_days:
-            items.append(
-                Item(
-                    title="Wealth figures are out of date",
-                    detail=f"{account.company} last updated {snapshot.as_of:%-d %b %Y}"
-                    f" — {age} days ago",
-                    href="/wealth",
-                )
+    stale = stale_wealth(doc, today)
+    if stale is not None:
+        account, snapshot, age = stale
+        items.append(
+            Item(
+                title="Wealth figures are out of date",
+                detail=f"{account.company} last updated {snapshot.as_of:%-d %b %Y}"
+                f" — {age} days ago",
+                href="/wealth",
             )
+        )
 
     balances = pot_balances(doc)
     for pot in doc.pots:
@@ -588,7 +620,7 @@ def attention(doc: Document, today: date) -> Attention:
             items.append(
                 Item(
                     title=f"{pot.name} is overdrawn",
-                    detail=f"balance {balances[pot.id] / 100:,.2f}",
+                    detail=f"balance {format_money(balances[pot.id])}",
                     href=f"/pots/{pot.id}",
                     urgent=True,
                 )

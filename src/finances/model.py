@@ -93,7 +93,7 @@ class PotEntry(BaseModel):
 class PaydayRun(BaseModel):
     """A record that payday was processed for a given month.
 
-    Exists so the dashboard can say "not yet run for September" — which the
+    Exists so the Today page can say "not yet run for September" — which the
     spreadsheet could only express as an empty column that looked identical to
     a month that genuinely had nothing in it.
     """
