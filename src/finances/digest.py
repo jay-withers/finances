@@ -1,6 +1,6 @@
 """The weekly reminder digest: what the calendar reminders used to do.
 
-Composed from exactly the same `calc.attention()` the dashboard renders, so the
+Composed from exactly the same `calc.attention()` the Today page renders, so the
 email can never tell a different story from the app it links to.
 
 **This logs a line on every run, including a quiet one.** The shared platform's
@@ -30,6 +30,12 @@ class Digest:
     text: str
     html: str
     item_count: int
+
+
+def _today_url(app_url: str) -> str:
+    """The app's Today page, which lists exactly what this email does. The
+    root is the home tiles, one tap further from it."""
+    return f"{app_url.rstrip('/')}/today"
 
 
 def compose(doc: Document, today: date, app_url: str = "") -> Digest:
@@ -80,7 +86,7 @@ def compose(doc: Document, today: date, app_url: str = "") -> Digest:
     lines.append(f"Pots hold {format_money(calc.pots_total(doc))} across {len(doc.pots)} pot(s).")
     if app_url:
         lines.append("")
-        lines.append(app_url)
+        lines.append(_today_url(app_url))
 
     text = "\n".join(lines)
     return Digest(
@@ -151,7 +157,7 @@ def _html(
     )
 
     link = (
-        f'<p><a href="{escape(app_url)}" style="color:#1a73e8">Open the app</a></p>'
+        f'<p><a href="{escape(_today_url(app_url))}" style="color:#1a73e8">Open the app</a></p>'
         if app_url
         else ""
     )

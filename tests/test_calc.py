@@ -80,6 +80,38 @@ def test_ledger_months_of_nothing_is_empty():
     assert calc.ledger_months([]) == []
 
 
+def test_attention_says_one_day_not_one_days(doc: Document):
+    details = [i.detail for i in calc.attention(doc, date(2026, 11, 7)).items]
+    assert "expired 1 day ago" in details
+    details = [i.detail for i in calc.attention(doc, date(2026, 11, 5)).items]
+    assert "in 1 day" in details
+
+
+def test_no_payday_nag_when_no_pot_would_be_topped_up(doc: Document):
+    for pot in doc.pots:
+        pot.archived = True
+    items = calc.attention(doc, date(2026, 9, 29)).items
+    assert not [i for i in items if i.href == "/payday"]
+
+
+def test_stale_wealth_is_the_oldest_valuation_past_the_limit(doc: Document):
+    # The oldest is the private pension, valued 29 Apr; the limit is 90 days.
+    stale = calc.stale_wealth(doc, date(2026, 9, 20))
+    assert stale is not None
+    account, _snapshot, age = stale
+    assert (account.company, age) == ("A Pension", 144)
+    assert calc.stale_wealth(doc, date(2026, 5, 1)) is None
+
+
+def test_next_renewal_skips_expired_and_rolling(doc: Document):
+    assert calc.next_renewal(doc, date(2026, 11, 6)) is not None
+    renewal, days = calc.next_renewal(doc, date(2026, 11, 6)) or (None, None)
+    assert (renewal and renewal.kind, days) == ("Car MOT", 0)  # today counts
+    renewal, days = calc.next_renewal(doc, date(2026, 11, 7)) or (None, None)
+    assert (renewal and renewal.kind, days) == ("Mortgage", 205)
+    assert calc.next_renewal(doc, date(2027, 6, 1)) is None  # only the rolling SIM left
+
+
 # --- insights -----------------------------------------------------------------
 
 

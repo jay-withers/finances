@@ -88,7 +88,7 @@ class Settings(BaseSettings):
     # not a personal mailbox, so it is fine to commit.
     digest_email_from: str = "Finances <finances@finances.jaywithers.uk>"
 
-    # A renewal inside this many days is "due" on the dashboard and in the
+    # A renewal inside this many days is "due" on the Today page and in the
     # digest. Per-renewal `notice_days` overrides it — a mortgage wants longer
     # notice than a SIM.
     default_notice_days: int = 60

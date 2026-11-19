@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% block title %}Today &middot; finances{% endblock %}
 {% block subtitle %}{{ today.strftime('%-d %B %Y') }}{% endblock %}
 {% block body %}
 
@@ -41,11 +42,4 @@
   </tbody>
 </table>
 
-<h2><a href="/pots" style="color:inherit;text-decoration:none">Savings &middot; {{ pots_total | money }}</a></h2>
-
-{% if doc.wealth_accounts %}
-<h2><a href="/wealth" style="color:inherit;text-decoration:none">Pensions &middot; {{ wealth_total | money }}</a></h2>
-{% endif %}
-
-<form method="post" action="/logout"><button class="ghost" type="submit">Log out</button></form>
 {% endblock %}

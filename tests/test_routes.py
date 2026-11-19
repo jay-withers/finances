@@ -43,6 +43,125 @@ def pot_named(document: Document, name: str):
     return next(p for p in document.pots if p.name == name)
 
 
+# --- home ---------------------------------------------------------------------
+
+
+def _home(client, monkeypatch, today: date) -> str:
+    monkeypatch.setattr("finances.api.routes._today", lambda: today)
+    return client.get("/").text
+
+
+def _tile(html: str, title: str) -> str:
+    """The HTML of one tile, from its label to the next tile."""
+    start = html.index(f'<div class="label">{title}</div>')
+    opening = html.rindex("<a ", 0, start)
+    return html[opening : html.index("</a>", start)]
+
+
+def test_home_is_a_tile_per_area_and_nothing_else(client, monkeypatch):
+    html = _home(client, monkeypatch, date(2026, 9, 20))
+    for title, href in [
+        ("Today", "/today"),
+        ("Payday", "/payday"),
+        ("Savings", "/pots"),
+        ("In / Out", "/monthly"),
+        ("Renewals", "/renewals"),
+        ("Pensions", "/wealth"),
+        ("Insights", "/insights"),
+    ]:
+        assert f'href="{href}"' in _tile(html, title), title
+    # The attention list and the week's movements live on Today now.
+    assert "Needs attention" not in html and "Last 7 days" not in html
+    assert "/logout" in html
+
+
+def test_the_today_tile_counts_what_needs_attention(client, monkeypatch):
+    # 29 Sep: payday a day late, the MOT due, pensions stale, Car overdrawn.
+    tile = _tile(_home(client, monkeypatch, date(2026, 9, 29)), "Today")
+    assert "4 things to look at" in tile
+    assert "Payday not yet run for September 2026, and 3 more" in tile  # the first first
+    assert "urgent" in tile
+
+
+def test_the_today_tile_is_all_clear_with_nothing_to_do(client, monkeypatch):
+    store.save(Document())
+    tile = _tile(_home(client, monkeypatch, date(2026, 9, 29)), "Today")
+    assert "All clear" in tile and "0 movements in the last 7 days" in tile
+    assert "urgent" not in tile and "warn" not in tile
+    html = _home(client, monkeypatch, date(2026, 9, 29))
+    assert "none coming up" in _tile(html, "Renewals")
+    assert "No pots to top up" in _tile(html, "Payday")
+    assert "None yet" in _tile(html, "Pensions")
+
+
+def test_the_payday_tile_follows_the_month(client, stored, monkeypatch):
+    before = _tile(_home(client, monkeypatch, date(2026, 9, 20)), "Payday")
+    assert "Due 28 Sep" in before and "£500 to top up" in before
+    assert "warn" not in before
+
+    on_the_day = _tile(_home(client, monkeypatch, date(2026, 9, 28)), "Payday")
+    assert "Not yet run" in on_the_day and "warn" in on_the_day
+
+    late = _tile(_home(client, monkeypatch, date(2026, 9, 29)), "Payday")
+    assert "urgent" in late
+
+    holidays = pot_named(stored, "Holidays")
+    client.post("/payday/run", data={"on": "2026-09-29", f"amount_{holidays.id}": "450"})
+    done = _tile(_home(client, monkeypatch, date(2026, 9, 30)), "Payday")
+    assert "Done for September" in done and "run 29 Sep" in done
+
+
+def test_an_overdrawn_pot_shows_its_balance_in_pounds_not_a_float(client, monkeypatch):
+    monkeypatch.setattr("finances.api.routes._today", lambda: date(2026, 9, 20))
+    assert "balance -£100" in client.get("/today").text
+
+
+def test_the_savings_tile_flags_an_overdrawn_pot(client, monkeypatch):
+    tile = _tile(_home(client, monkeypatch, date(2026, 9, 20)), "Savings")
+    assert "£7,475" in tile  # every live pot
+    assert "1 pot overdrawn" in tile and "urgent" in tile
+
+
+def test_the_money_tile_shows_spare_or_the_shortfall(client, monkeypatch):
+    tile = _tile(_home(client, monkeypatch, date(2026, 9, 20)), "In / Out")
+    assert "£2,400" in tile and "spare a month" in tile
+    client.post("/monthly/add", data={"kind": "outgoing", "name": "Yacht", "amount": "9000"})
+    tile = _tile(_home(client, monkeypatch, date(2026, 9, 20)), "In / Out")
+    assert "a month more out than in" in tile and "urgent" in tile
+
+
+def test_the_renewals_tile_names_the_next_one(client, monkeypatch):
+    soon = _tile(_home(client, monkeypatch, date(2026, 10, 7)), "Renewals")
+    assert "Car MOT" in soon and "in 30 days" in soon and "warn" in soon
+    # Red from two weeks out, matching the Today tile for the same renewal.
+    close = _tile(_home(client, monkeypatch, date(2026, 10, 23)), "Renewals")
+    assert "in 14 days" in close and "urgent" in close
+    # Once expired the MOT stays named, since it is what needs dealing with.
+    expired = _tile(_home(client, monkeypatch, date(2026, 11, 8)), "Renewals")
+    assert "Car MOT" in expired and "expired 2 days ago" in expired and "urgent" in expired
+
+    mot = next(r for r in reload().renewals if r.kind == "Car MOT")
+    client.post(f"/renewals/{mot.id}", data={"kind": "Car MOT", "expires_on": "2027-11-06"})
+    later = _tile(_home(client, monkeypatch, date(2026, 11, 8)), "Renewals")
+    assert "Mortgage" in later and "in 204 days" in later and "warn" not in later
+    all_expired = _tile(_home(client, monkeypatch, date(2028, 1, 1)), "Renewals")
+    assert "expired" in all_expired and "urgent" in all_expired
+
+
+def test_the_pensions_tile_says_when_figures_are_stale(client, monkeypatch):
+    tile = _tile(_home(client, monkeypatch, date(2026, 9, 20)), "Pensions")
+    assert "figures out of date" in tile and "warn" in tile
+    fresh = _tile(_home(client, monkeypatch, date(2026, 5, 1)), "Pensions")
+    assert "3 accounts" in fresh and "warn" not in fresh
+
+
+def test_the_today_page_has_the_attention_list_and_the_week(client, monkeypatch):
+    monkeypatch.setattr("finances.api.routes._today", lambda: date(2026, 9, 4))
+    html = client.get("/today").text
+    assert "Needs attention" in html and "Last 7 days" in html
+    assert "Car" in html  # the 2 Sep spend, inside the week
+
+
 # --- payday -------------------------------------------------------------------
 
 
@@ -134,14 +253,14 @@ def test_payday_transfer_can_be_deleted(client, stored):
     assert fixed.id not in [t.id for t in reload().transfers]
 
 
-def test_payday_clears_the_dashboard_nag(client, stored, monkeypatch):
-    """The nag only starts on the 28th, so the dashboard's clock is pinned here
+def test_payday_clears_the_today_nag(client, stored, monkeypatch):
+    """The nag only starts on the 28th, so the Today page's clock is pinned here
     rather than relying on whatever day the suite happens to run on."""
     monkeypatch.setattr("finances.api.routes._today", lambda: date(2026, 9, 29))
-    assert "Payday not yet run" in client.get("/").text
+    assert "Payday not yet run" in client.get("/today").text
     holidays = pot_named(stored, "Holidays")
     client.post("/payday/run", data={"on": "2026-09-25", f"amount_{holidays.id}": "450"})
-    assert "Payday not yet run" not in client.get("/").text
+    assert "Payday not yet run" not in client.get("/today").text
 
 
 # --- pots ---------------------------------------------------------------------
@@ -471,8 +590,8 @@ def test_marking_a_renewal_rolling_clears_its_date(client, stored):
     assert updated.expires_on is None
 
 
-def test_a_due_renewal_shows_on_the_dashboard(client):
-    assert "Car MOT" in client.get("/").text
+def test_a_due_renewal_shows_on_the_today_page(client):
+    assert "Car MOT" in client.get("/today").text
 
 
 # --- wealth -------------------------------------------------------------------
@@ -555,13 +674,13 @@ def test_deleting_a_valuation_under_the_wrong_account_is_a_noop(client, stored):
 
 
 def test_a_fresh_valuation_clears_the_stale_warning(client):
-    assert "out of date" in client.get("/").text
+    assert "out of date" in client.get("/today").text
     for account in reload().wealth_accounts:
         client.post(
             f"/wealth/{account.id}/snapshot",
             data={"as_of": "2026-09-20", "current": "1000"},
         )
-    assert "out of date" not in client.get("/").text
+    assert "out of date" not in client.get("/today").text
 
 
 def test_a_drop_in_value_is_shown_in_the_bad_colour(client, stored):

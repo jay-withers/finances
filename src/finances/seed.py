@@ -190,6 +190,6 @@ def sample_document(today: date | None = None) -> Document:
         ),
     ]
 
-    # No PaydayRun on purpose: the dashboard should open showing that this
-    # month's payday has not been run.
+    # No PaydayRun for this month on purpose: the home screen should open
+    # showing that this month's payday has not been run.
     return doc
