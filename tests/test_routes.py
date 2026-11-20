@@ -971,6 +971,13 @@ def test_manifest_names_android_icons(client):
     assert all(i["type"] == "image/png" for i in icons)
 
 
+def test_the_installed_app_opens_on_the_home_page(client):
+    """And keeps its identity if the start page ever moves."""
+    manifest = client.get("/manifest.json").json()
+    assert manifest["start_url"] == "/"
+    assert manifest["id"] == "/"
+
+
 def test_manifest_icons_are_served_outside_the_gate(anonymous):
     """The login page is where a fresh install starts, before any cookie."""
     for icon in anonymous.get("/manifest.json").json()["icons"]:

@@ -54,7 +54,8 @@ next save would write that back.
 
 [jay-withers/appkit](https://github.com/jay-withers/appkit) holds what career,
 finances and gym-log used to copy: `appkit.headers` (security headers and the
-CSP nonce), `appkit.passcode` (`api/deps.py` only names the cookie),
+CSP nonce), `appkit.manifest` (`/manifest.json`, opening on `/`),
+`appkit.passcode` (`api/deps.py` only names the cookie),
 `appkit.keyvault` (`settings.py` keeps `Settings` and the cached
 `secret`/`optional_secret`/`credential` wrappers the tests clear),
 `appkit.backup` and `appkit.selfcheck` (`backup.py` and `selfcheck.py` keep
