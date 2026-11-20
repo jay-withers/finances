@@ -56,10 +56,16 @@ APP = "finances"
 logger = logging.getLogger(__name__)
 
 
+# The bytes the last copy read, for `run` to judge: the document that is in R2,
+# not whatever a write has made of the blob since.
+_copied: list[bytes] = []
+
+
 def _document(raw: bytes) -> None:
     """What "restores" means: the copy parses. Only that: a document that breaks
     one of its rules is still a good backup of it, and failing here would cost
     the month its monthly copy. `run` judges the rules after every copy."""
+    _copied.append(raw)
     integrity.parse(raw)
 
 
@@ -81,17 +87,14 @@ def run(client: Any | None = None, now: datetime | None = None) -> int:
 
     Judged after both the daily and any monthly copy are in R2 (copy first, judge
     second), so a document that went bad fires the job-failure alert with every
-    copy safe. This is the daily integrity check; the selfcheck is the per-deploy
-    one.
+    copy safe. This is where a stored rule violation is reported; the deploy
+    selfcheck runs the round trip only.
     """
+    _copied.clear()
     failed = JOB.run(client=client, now=now)
-    try:
-        raw = store.load_raw()
-    except Exception as exc:
-        logger.error("integrity: not checked, the document did not read: %s", type(exc).__name__)
-        return 1
-    if raw is None:
-        return failed
+    if not _copied:
+        return failed  # nothing was read (not configured, or the read failed)
+    raw = _copied[0]
     found = kit.problems(raw, integrity.parse, integrity.dump, integrity.check)
     if found:
         logger.error("integrity: FAIL %s", kit.IntegrityError(found))

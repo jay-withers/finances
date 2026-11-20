@@ -290,18 +290,27 @@ def test_a_good_document_logs_its_integrity_pass(configured, r2, a_log, caplog):
     assert "integrity: ok finances.json" in caplog.text
 
 
-def test_a_document_that_does_not_read_after_the_copy_fails(
-    configured, r2, a_log, monkeypatch, caplog
+def test_the_verdict_is_on_the_bytes_copied_not_a_later_read(
+    configured, r2, doc, monkeypatch, caplog
 ):
-    calls = iter([a_log])
+    """A write landing after the copy must not change what the night reports."""
+    doc.pot_entries[2].amount_pence = 30_000  # a spend stored as money in
+    store.local_path().write_bytes(doc.to_json().encode("utf-8"))
+    real_run = backup.JOB.run
 
-    def flaky() -> bytes | None:
-        try:
-            return next(calls)
-        except StopIteration:
-            raise ConnectionError("blob down") from None
+    def run_then_fix(**kwargs):
+        failed = real_run(**kwargs)
+        store.local_path().write_bytes(Document().to_json().encode("utf-8"))
+        return failed
 
-    monkeypatch.setattr(store, "load_raw", flaky)
+    monkeypatch.setattr(backup.JOB, "run", run_then_fix)
     with caplog.at_level(logging.INFO):
         assert backup.run(client=r2, now=MID_MONTH) == 1
-    assert "integrity: not checked, the document did not read: ConnectionError" in caplog.text
+    assert "a spend stored as money in" in caplog.text
+
+
+def test_nothing_read_means_nothing_judged(configured, r2, caplog):
+    """A missing document fails the backup itself; there's nothing to judge."""
+    with caplog.at_level(logging.INFO):
+        assert backup.run(client=r2, now=MID_MONTH) == 1
+    assert "integrity:" not in caplog.text
