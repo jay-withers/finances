@@ -4,8 +4,9 @@ After every deploy, `make smoke` (workflows' smoke.sh) starts one run of each jo
 with its args swapped for `selfcheck`. That run gets everything a real one does
 — the image, the managed identity, the env and the Key Vault references — and
 checks what a real run needs before it does anything: the settings load, every
-secret the digest job reads resolves, and the document in storage reads. It
-sends no email and writes nothing.
+secret the digest job reads resolves, and the document in storage reads, keeps
+its rules (`integrity.check`) and would be written back by this release with
+nothing dropped (appkit's round trip). It sends no email and writes nothing.
 
 Exits 1 if any check fails, naming each failure but never a secret's value. A
 failure fails the smoke test, which rolls the deploy back.
@@ -32,7 +33,7 @@ __all__ = ["BACKUP_SECRETS", "OPTIONAL_SECRETS", "SECRETS", "checks", "run"]
 
 
 def checks() -> list[kit.Check]:
-    from . import backup, store
+    from . import backup, integrity, store
     from .settings import optional_secret, secret, settings
 
     return [
@@ -40,6 +41,9 @@ def checks() -> list[kit.Check]:
         *kit.secret_checks(SECRETS, secret),
         *kit.optional_secret_checks(OPTIONAL_SECRETS, optional_secret),
         ("storage", store.load),
+        *kit.integrity_checks(
+            store.BLOB_NAME, store.load_raw, integrity.parse, integrity.dump, integrity.check
+        ),
         *kit.backup_checks(backup.JOB),
     ]
 

@@ -60,6 +60,24 @@ class ConflictResponse(Exception):
     """Raised when a write lost its race twice. Handled in main.create_app."""
 
 
+class InvalidInput(Exception):
+    """A form value that would record something wrong. Handled in
+    main.create_app, which answers with `status_code` and the message, so
+    whoever typed it sees it was not recorded."""
+
+    def __init__(self, message: str, status_code: int = status.HTTP_422_UNPROCESSABLE_CONTENT):
+        super().__init__(message)
+        self.status_code = status_code
+
+
+def _amount(raw: str) -> int:
+    """`parse_money`, with a typo answered as bad input rather than a 500."""
+    try:
+        return parse_money(raw)
+    except ValueError as exc:
+        raise InvalidInput("That amount isn't a number.") from exc
+
+
 def _today() -> date:
     return datetime.now(UTC).date()
 
@@ -456,9 +474,13 @@ async def payday_run(request: Request) -> Any:
             raw = str(form.get(f"amount_{pot.id}", "")).strip()
             if not raw:
                 continue  # unticked or cleared: this pot sits this month out
-            amount = parse_money(raw)
+            amount = _amount(raw)
             if amount == 0:
                 continue
+            if amount < 0:
+                # A payday only ever puts money in; a negative one would shrink
+                # the pot while the ledger called it a contribution.
+                raise InvalidInput("A payday amount can't be negative. Record a spend instead.")
             entry = PotEntry(
                 pot_id=pot.id,
                 on=on,
@@ -499,7 +521,7 @@ async def payday_transfers_save(request: Request) -> Any:
             raw = form.get(f"transfer_{transfer.id}")
             if raw is not None and not transfer.tracks_pots:
                 text = str(raw).strip()
-                transfer.amount_pence = parse_money(text) if text else None
+                transfer.amount_pence = _amount(text) if text else None
         return doc
 
     _apply(change)
@@ -515,7 +537,7 @@ def payday_transfer_add(
         doc.transfers.append(
             Transfer(
                 label=label.strip(),
-                amount_pence=parse_money(text) if text else None,
+                amount_pence=_amount(text) if text else None,
                 note=note.strip(),
             )
         )
@@ -591,7 +613,7 @@ def pot_page(request: Request, pot_id: str, month: str = "") -> Any:
 @router.post("/pots/add", include_in_schema=False)
 def pot_add(name: str = Form(...), monthly: str = Form(default="")) -> Any:
     def change(doc: Document) -> Document:
-        doc.pots.append(Pot(name=name.strip(), monthly_pence=parse_money(monthly)))
+        doc.pots.append(Pot(name=name.strip(), monthly_pence=_amount(monthly)))
         return doc
 
     _apply(change)
@@ -610,7 +632,7 @@ def pot_edit(
         pot = doc.pot(pot_id)
         if pot is not None:
             pot.name = name.strip()
-            pot.monthly_pence = parse_money(monthly)
+            pot.monthly_pence = _amount(monthly)
             pot.counts_toward_payday = bool(counts)
             pot.archived = bool(archived)
         return doc
@@ -633,21 +655,25 @@ def pot_entry(
     and "-100" in the spend box both mean the same thing. Getting that wrong
     silently doubles a pot instead of halving it.
     """
-    value = abs(parse_money(amount))
+    value = abs(_amount(amount))
+    if value == 0:
+        raise InvalidInput("An amount of zero records nothing.")
     signed = -value if kind == "spend" else value
     when = _date(on, _today())
 
     def change(doc: Document) -> Document:
-        if doc.pot(pot_id) is not None:
-            doc.pot_entries.append(
-                PotEntry(
-                    pot_id=pot_id,
-                    on=when,
-                    amount_pence=signed,
-                    kind="spend" if kind == "spend" else "deposit",
-                    note=note.strip(),
-                )
+        if doc.pot(pot_id) is None:
+            # Was a silent no-op: the form redirected back as if it had saved.
+            raise InvalidInput("That pot no longer exists.", status.HTTP_404_NOT_FOUND)
+        doc.pot_entries.append(
+            PotEntry(
+                pot_id=pot_id,
+                on=when,
+                amount_pence=signed,
+                kind="spend" if kind == "spend" else "deposit",
+                note=note.strip(),
             )
+        )
         return doc
 
     _apply(change)
@@ -764,7 +790,7 @@ async def monthly_save(request: Request) -> Any:
         for line in [*doc.income, *doc.outgoings]:
             raw = form.get(f"amount_{line.id}")
             if raw is not None:
-                line.amount_pence = parse_money(str(raw))
+                line.amount_pence = _amount(str(raw))
             name = form.get(f"name_{line.id}")
             if name is not None and str(name).strip():
                 line.name = str(name).strip()
@@ -783,7 +809,7 @@ def monthly_add(
     kind: str = Form(...), name: str = Form(...), amount: str = Form(default="")
 ) -> Any:
     def change(doc: Document) -> Document:
-        line = Line(name=name.strip(), amount_pence=parse_money(amount))
+        line = Line(name=name.strip(), amount_pence=_amount(amount))
         if kind == "income":
             doc.income.append(line)
         else:
@@ -1000,15 +1026,16 @@ def wealth_snapshot_add(
 
     def change(doc: Document) -> Document:
         if doc.account(account_id) is None:
-            return doc
-        current_pence = parse_money(current) if current.strip() else None
+            # Was a silent no-op that redirected back as if it had saved.
+            raise InvalidInput("That account no longer exists.", status.HTTP_404_NOT_FOUND)
+        current_pence = _amount(current) if current.strip() else None
         history = doc.snapshots_for(account_id)
         doc.wealth_snapshots.append(
             WealthSnapshot(
                 account_id=account_id,
                 as_of=when,
                 current_pence=current_pence,
-                yearly_projection_pence=parse_money(projection) if projection.strip() else None,
+                yearly_projection_pence=_amount(projection) if projection.strip() else None,
                 year_growth=(
                     calc.annualised_growth(history, current_pence, when)
                     if current_pence is not None

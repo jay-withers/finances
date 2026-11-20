@@ -19,6 +19,7 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 from appkit import headers, health
+from appkit.integrity import IntegrityError
 from fastapi import Depends, FastAPI, status
 from fastapi.responses import JSONResponse
 
@@ -82,6 +83,22 @@ def create_app() -> FastAPI:
         return JSONResponse(
             status_code=status.HTTP_409_CONFLICT,
             content={"detail": str(exc)},
+        )
+
+    @app.exception_handler(routes.InvalidInput)
+    async def _invalid(_request: Any, exc: routes.InvalidInput) -> JSONResponse:
+        """A form value refused before anything was written."""
+        return JSONResponse(status_code=exc.status_code, content={"detail": str(exc)})
+
+    @app.exception_handler(IntegrityError)
+    async def _broken(_request: Any, exc: IntegrityError) -> JSONResponse:
+        """A change `store.save` refused because the document would break one
+        of its rules: a route bug the route-level checks missed. Nothing was
+        written. The detail names ids and indexes, never amounts."""
+        logger.error("write refused: %s", exc)
+        return JSONResponse(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            content={"detail": f"Not saved: {exc}"},
         )
 
     return app

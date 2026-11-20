@@ -37,12 +37,15 @@ rest are still attempted.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
+from datetime import datetime
+from typing import Any
 
+from appkit import integrity as kit
 from appkit.backup import Backup, Document
 
-from . import store
-from .model import Document as FinancesDocument
+from . import integrity, store
 from .settings import secret, settings
 
 # The key prefix under daily/ and monthly/, shared by every app writing to the
@@ -50,8 +53,14 @@ from .settings import secret, settings
 APP = "finances"
 
 
+logger = logging.getLogger(__name__)
+
+
 def _document(raw: bytes) -> None:
-    FinancesDocument.from_json(raw.decode("utf-8"))
+    """What "restores" means: the copy parses. Only that: a document that breaks
+    one of its rules is still a good backup of it, and failing here would cost
+    the month its monthly copy. `run` judges the rules after every copy."""
+    integrity.parse(raw)
 
 
 def _load() -> Callable[[], bytes | None]:
@@ -66,7 +75,31 @@ JOB = Backup(
     secret=secret,
 )
 
-run = JOB.run
+
+def run(client: Any | None = None, now: datetime | None = None) -> int:
+    """Back up, then check the document's rules and round trip: 1 if either fails.
+
+    Judged after both the daily and any monthly copy are in R2 (copy first, judge
+    second), so a document that went bad fires the job-failure alert with every
+    copy safe. This is the daily integrity check; the selfcheck is the per-deploy
+    one.
+    """
+    failed = JOB.run(client=client, now=now)
+    try:
+        raw = store.load_raw()
+    except Exception as exc:
+        logger.error("integrity: not checked, the document did not read: %s", type(exc).__name__)
+        return 1
+    if raw is None:
+        return failed
+    found = kit.problems(raw, integrity.parse, integrity.dump, integrity.check)
+    if found:
+        logger.error("integrity: FAIL %s", kit.IntegrityError(found))
+        return 1
+    logger.info("integrity: ok %s", store.BLOB_NAME)
+    return failed
+
+
 keys = JOB.keys
 check_bucket = JOB.check_bucket
 r2_client = JOB.r2_client

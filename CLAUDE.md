@@ -49,6 +49,15 @@ next save would write that back.
   anything in the account fail, containers included.
 - `tests/test_store.py` covers all of this against a fake `BlobClient`. A change
   to `store.py` needs a test there.
+- **`integrity.check` is the document's rules** (unique ids, no orphaned entry or
+  snapshot, a payday run names only live entries, one run per month, a spend is
+  never positive and a deposit or payday never negative). `store.save` refuses a
+  document that breaks one, the selfcheck runs it with appkit's round trip
+  against the live document after every deploy, and the backup runs it after
+  copying. **A new rule must hold for the live document**, or the next deploy's
+  selfcheck fails and rolls back: add it with the route change that keeps it,
+  and fix any stored violation first. Problems name ids and indexes, never an
+  amount, a name or a note: they reach Log Analytics.
 
 ## Shared code: appkit, and the copies that remain
 

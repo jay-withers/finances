@@ -26,9 +26,12 @@ from __future__ import annotations
 
 import logging
 import pathlib
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from typing import Any
 
+from appkit.integrity import IntegrityError
+
+from . import integrity
 from .model import Document
 from .settings import credential, settings
 
@@ -65,13 +68,26 @@ def load() -> tuple[Document, str | None]:
     return Document.from_json(raw.decode("utf-8")), etag
 
 
-def save(document: Document, etag: str | None = None) -> str | None:
+def save(
+    document: Document, etag: str | None = None, *, tolerated: Collection[str] = ()
+) -> str | None:
     """Write the document, refusing to clobber a document that moved underneath us.
 
     `etag` is the value from the `load()` that produced this document. None means
     "this must be a create", which is what stops two first-runs racing and one
     of them winning silently.
+
+    A document that breaks one of `integrity.check`'s rules is refused with
+    `IntegrityError` before anything is sent: a route bug must not be able to
+    put an orphaned entry or a positive spend in storage. `tolerated` are
+    problems the stored document already had (`update` passes them), so one
+    old violation can't make every unrelated write fail, including the edit
+    that would repair it.
     """
+    problems = [p for p in integrity.check(document) if p not in tolerated]
+    if problems:
+        raise IntegrityError(problems)
+
     blob = _blob()
     if blob is None:
         _save_local(document)
@@ -107,9 +123,11 @@ def update(change: Callable[[Document], Document]) -> Document:
     """
     for attempt in (1, 2):
         document, etag = load()
+        # Read before `change`, which may mutate the document it is handed.
+        already = integrity.check(document)
         updated = change(document)
         try:
-            save(updated, etag)
+            save(updated, etag, tolerated=already)
         except ConflictError:
             if attempt == 2:
                 raise
