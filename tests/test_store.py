@@ -280,3 +280,74 @@ def test_load_raw_reads_the_local_file_without_a_container():
     assert store.load_raw() is None
     store.local_path().write_bytes(b"document bytes")
     assert store.load_raw() == b"document bytes"
+
+
+# --- the integrity guard --------------------------------------------------------
+
+
+def _orphaned(doc: Document) -> Document:
+    from datetime import date
+
+    from finances.model import PotEntry
+
+    doc.pot_entries.append(PotEntry(pot_id="nopot000", on=date(2026, 9, 1), amount_pence=100))
+    return doc
+
+
+def test_a_broken_document_is_refused_and_the_local_file_is_untouched(doc):
+    """A route bug must not be able to put an orphaned entry in storage."""
+    from appkit.integrity import IntegrityError
+
+    store.save(doc)
+    before = store.local_path().read_bytes()
+    with pytest.raises(IntegrityError, match="points at no pot"):
+        store.save(_orphaned(doc))
+    assert store.local_path().read_bytes() == before
+
+
+def test_a_broken_document_is_never_sent_to_the_blob(blob, doc):
+    from appkit.integrity import IntegrityError
+
+    with pytest.raises(IntegrityError):
+        store.save(_orphaned(doc), etag='"read"')
+    assert blob.uploads == []
+
+
+def test_update_refuses_a_change_that_breaks_a_rule(doc):
+    from appkit.integrity import IntegrityError
+
+    store.save(doc)
+    with pytest.raises(IntegrityError):
+        store.update(_orphaned)
+    assert store.load()[0] == doc
+
+
+def test_a_violation_already_stored_does_not_block_unrelated_writes(doc):
+    """Otherwise one old problem makes the app read-only, the repair included."""
+    from finances import integrity
+
+    broken = _orphaned(doc)
+    store.local_path().write_text(broken.to_json(), encoding="utf-8")  # as if written before
+    assert integrity.check(store.load()[0])  # it is broken
+
+    store.update(_with_income("Bonus"))
+    assert [line.name for line in store.load()[0].income][-1] == "Bonus"
+
+
+def test_a_change_that_adds_a_second_violation_is_still_refused(doc):
+    from datetime import date
+
+    from appkit.integrity import IntegrityError
+
+    from finances.model import PotEntry
+
+    store.local_path().write_text(_orphaned(doc).to_json(), encoding="utf-8")
+
+    def another(document: Document) -> Document:
+        document.pot_entries.append(
+            PotEntry(id="second00", pot_id="nopot000", on=date(2026, 9, 1), amount_pence=1)
+        )
+        return document
+
+    with pytest.raises(IntegrityError, match="second00"):
+        store.update(another)

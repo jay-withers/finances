@@ -268,3 +268,40 @@ def test_an_r2_client_that_cannot_be_built_is_logged_not_raised(
     with caplog.at_level(logging.INFO):
         assert backup.run(now=MID_MONTH) == 1
     assert "FAIL setup: RuntimeError: R2-ACCESS-KEY-ID is not set" in caplog.text
+
+
+def test_a_document_that_breaks_a_rule_is_still_copied_then_fails(configured, r2, doc, caplog):
+    """Copy first, judge second: the alert fires with the copy already safe."""
+    doc.pot_entries[2].amount_pence = 30_000  # a spend stored as money in
+    raw = doc.to_json().encode("utf-8")
+    store.local_path().write_bytes(raw)
+    with caplog.at_level(logging.INFO):
+        assert backup.run(client=r2, now=MID_MONTH) == 1
+    # Both copies: the month's slot is not lost to a rule the document breaks.
+    assert set(r2.objects) == {DAILY, MONTHLY}
+    assert pyrage.decrypt(r2.objects[MONTHLY], [OWNER]) == raw
+    assert "integrity: FAIL" in caplog.text
+    assert "a spend stored as money in" in caplog.text
+
+
+def test_a_good_document_logs_its_integrity_pass(configured, r2, a_log, caplog):
+    with caplog.at_level(logging.INFO):
+        assert backup.run(client=r2, now=MID_MONTH) == 0
+    assert "integrity: ok finances.json" in caplog.text
+
+
+def test_a_document_that_does_not_read_after_the_copy_fails(
+    configured, r2, a_log, monkeypatch, caplog
+):
+    calls = iter([a_log])
+
+    def flaky() -> bytes | None:
+        try:
+            return next(calls)
+        except StopIteration:
+            raise ConnectionError("blob down") from None
+
+    monkeypatch.setattr(store, "load_raw", flaky)
+    with caplog.at_level(logging.INFO):
+        assert backup.run(client=r2, now=MID_MONTH) == 1
+    assert "integrity: not checked, the document did not read: ConnectionError" in caplog.text

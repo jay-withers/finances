@@ -118,3 +118,35 @@ def test_the_digest_needs_neither_the_bucket_nor_the_backup_keys(storage_ok, cap
         assert selfcheck.run() == 0
     assert "backup bucket" not in caplog.text
     assert "R2-" not in caplog.text
+
+
+# --- integrity -----------------------------------------------------------------
+
+
+def test_a_stored_document_that_breaks_a_rule_fails_and_names_it(storage_ok, doc, caplog):
+    """After a deploy, against the live document: this rolls the release back."""
+    doc.pot_entries[2].amount_pence = 30_000  # a spend stored as money in
+    store.local_path().write_text(doc.to_json(), encoding="utf-8")
+    with caplog.at_level(logging.INFO):
+        assert selfcheck.run() == 1
+    assert "FAIL integrity finances.json: IntegrityError" in caplog.text
+    assert "a spend stored as money in" in caplog.text
+
+
+def test_a_stored_field_this_release_would_drop_fails(storage_ok, doc, caplog):
+    """A model that no longer knows a stored key would lose it on the next write."""
+    import json
+
+    raw = json.loads(doc.to_json())
+    raw["pots"][0]["colour"] = "teal"  # a field from some other release
+    store.local_path().write_text(json.dumps(raw), encoding="utf-8")
+    with caplog.at_level(logging.INFO):
+        assert selfcheck.run() == 1
+    assert "$.pots[0].colour: dropped" in caplog.text
+    assert "teal" not in caplog.text
+
+
+def test_a_good_stored_document_passes(storage_ok, stored, caplog):
+    with caplog.at_level(logging.INFO):
+        assert selfcheck.run() == 0
+    assert "selfcheck: ok integrity finances.json" in caplog.text

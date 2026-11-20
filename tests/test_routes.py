@@ -897,15 +897,6 @@ def test_a_first_valuation_has_no_previous_figure_to_grow_from(client):
     assert _latest(reload(), account.id).year_growth is None
 
 
-def test_snapshot_for_an_unknown_account_is_a_noop(client, stored):
-    before = len(stored.wealth_snapshots)
-    response = client.post(
-        "/wealth/does-not-exist/snapshot", data={"as_of": "2026-09-20", "current": "100"}
-    )
-    assert response.status_code == 200
-    assert len(reload().wealth_snapshots) == before
-
-
 # --- general ------------------------------------------------------------------
 
 
@@ -989,3 +980,80 @@ def test_manifest_icons_are_served_outside_the_gate(anonymous):
 
 def test_unknown_icon_is_a_404(anonymous):
     assert anonymous.get("/icons/nope.png").status_code == 404
+
+
+# --- refused input ---------------------------------------------------------------
+
+
+@pytest.mark.parametrize("amount", ["0", "0.00", "£0"])
+def test_a_zero_entry_is_refused_and_nothing_written(client, stored, amount):
+    car = pot_named(stored, "Car")
+    response = client.post(f"/pots/{car.id}/entry", data={"amount": amount, "kind": "deposit"})
+    assert response.status_code == 422
+    assert response.json() == {"detail": "An amount of zero records nothing."}
+    assert reload() == stored
+
+
+def test_an_entry_for_a_pot_that_no_longer_exists_says_so(client, stored):
+    """Was a silent no-op that redirected back as if it had saved."""
+    response = client.post("/pots/nopot000/entry", data={"amount": "10", "kind": "deposit"})
+    assert response.status_code == 404
+    assert response.json() == {"detail": "That pot no longer exists."}
+    assert reload() == stored
+
+
+def test_an_amount_that_isnt_a_number_is_refused_not_a_500(client, stored):
+    car = pot_named(stored, "Car")
+    response = client.post(f"/pots/{car.id}/entry", data={"amount": "ten", "kind": "deposit"})
+    assert response.status_code == 422
+    assert reload() == stored
+
+
+def test_a_negative_payday_amount_is_refused_and_nothing_written(client, stored):
+    holidays = pot_named(stored, "Holidays")
+    response = client.post(
+        "/payday/run", data={"on": "2026-09-25", f"amount_{holidays.id}": "-450"}
+    )
+    assert response.status_code == 422
+    assert reload() == stored
+
+
+def test_a_write_the_store_refuses_is_a_422_naming_no_amounts(client, stored, monkeypatch):
+    """The backstop: a route bug the checks above missed is refused at save."""
+    # Broken only once the deposit is in, so the problem is one the change adds.
+    monkeypatch.setattr(
+        "finances.integrity.check",
+        lambda doc: (
+            ["pot_entries (id abcd1234): points at no pot"]
+            if any(e.amount_pence == 2_500 for e in doc.pot_entries)
+            else []
+        ),
+    )
+    car = pot_named(stored, "Car")
+    response = client.post(f"/pots/{car.id}/entry", data={"amount": "25", "kind": "deposit"})
+    assert response.status_code == 422
+    assert response.json()["detail"].startswith(
+        "Not saved: 1 problem(s): pot_entries (id abcd1234)"
+    )
+    assert reload() == stored
+
+
+@pytest.mark.parametrize(
+    ("path", "data"),
+    [
+        ("/pots/add", {"name": "Boat", "monthly": "ten"}),
+        ("/monthly/add", {"kind": "outgoing", "name": "Gym", "amount": "ten"}),
+    ],
+)
+def test_a_typo_in_any_money_box_is_refused_not_a_500(client, stored, path, data):
+    response = client.post(path, data=data)
+    assert response.status_code == 422
+    assert response.json() == {"detail": "That amount isn't a number."}
+    assert reload() == stored
+
+
+def test_a_valuation_for_an_account_that_no_longer_exists_says_so(client, stored):
+    response = client.post("/wealth/noacct00/snapshot", data={"current": "100"})
+    assert response.status_code == 404
+    assert response.json() == {"detail": "That account no longer exists."}
+    assert reload() == stored
