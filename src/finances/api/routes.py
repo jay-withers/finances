@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from typing import Any
 
+from appkit import manifest as app_manifest
 from fastapi import APIRouter, Form, Request, Response, status
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
@@ -214,13 +215,8 @@ def favicon() -> Response:
 # glyph inside the middle 80%, because the launcher crops it to its own shape.
 # Read once at import: three small files, served on every cold start.
 ICON_DIR = PACKAGE_DIR / "icons"
-# (filename, sizes, purpose) for each icon, which the manifest and route share.
-PNG_ICONS = (
-    ("icon-192.png", "192x192", "any"),
-    ("icon-512.png", "512x512", "any"),
-    ("icon-maskable-512.png", "512x512", "maskable"),
-)
-PNG_BYTES = {name: (ICON_DIR / name).read_bytes() for name, _, _ in PNG_ICONS}
+# appkit names the icons, which the manifest and the route below share.
+PNG_BYTES = {name: (ICON_DIR / name).read_bytes() for name, _, _ in app_manifest.PNG_ICONS}
 
 
 @public.get("/icons/{name}", include_in_schema=False)
@@ -234,28 +230,19 @@ def png_icon(name: str) -> Response:
 
 @public.get("/manifest.json", include_in_schema=False)
 def manifest() -> JSONResponse:
-    """What lets the phone install this to the home screen.
+    """What lets the phone install this to the home screen, built by appkit:
+    opened on the home page, with `id` pinned to `/`.
 
     `display: standalone` is the point of it — opened from the home screen there
     is no browser chrome, which on a phone is a whole row of pot balances.
-    `id` pins the installed app's identity, so a later change to `start_url`
-    updates the installed app rather than counting as a different one.
     """
     return JSONResponse(
-        {
-            "id": "/",
-            "name": "finances",
-            "short_name": "money",
-            "start_url": "/",
-            "scope": "/",
-            "display": "standalone",
-            "background_color": "#101014",
-            "theme_color": "#101014",
-            "icons": [
-                {"src": f"/icons/{name}", "type": "image/png", "sizes": sizes, "purpose": purpose}
-                for name, sizes, purpose in PNG_ICONS
-            ],
-        }
+        app_manifest.build(
+            name="finances",
+            short_name="money",
+            colour="#101014",
+            icons=app_manifest.png_icons("/icons"),
+        )
     )
 
 
