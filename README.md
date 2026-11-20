@@ -25,7 +25,7 @@ No Azure, no credentials, no spreadsheet:
 ```bash
 make install                        # hooks and the Python environment
 make import FILE=Finances_3.xlsx    # or: make seed, for invented sample data
-make run                            # http://localhost:8000, passcode "local"
+make run                            # http://localhost:8000 (PORT=8001 for another), passcode "local"
 ```
 
 With `STATE_CONTAINER_URL` unset the document is a local `.finances.json` and
