@@ -123,14 +123,14 @@ def test_the_digest_needs_neither_the_bucket_nor_the_backup_keys(storage_ok, cap
 # --- integrity -----------------------------------------------------------------
 
 
-def test_a_stored_document_that_breaks_a_rule_fails_and_names_it(storage_ok, doc, caplog):
-    """After a deploy, against the live document: this rolls the release back."""
+def test_a_stored_rule_violation_does_not_fail_the_deploy(storage_ok, doc, caplog):
+    """A deploy can't change the data; one old bad entry mustn't block every
+    release. The nightly backup reports it instead."""
     doc.pot_entries[2].amount_pence = 30_000  # a spend stored as money in
     store.local_path().write_text(doc.to_json(), encoding="utf-8")
     with caplog.at_level(logging.INFO):
-        assert selfcheck.run() == 1
-    assert "FAIL integrity finances.json: IntegrityError" in caplog.text
-    assert "a spend stored as money in" in caplog.text
+        assert selfcheck.run() == 0
+    assert "selfcheck: ok integrity finances.json" in caplog.text
 
 
 def test_a_stored_field_this_release_would_drop_fails(storage_ok, doc, caplog):

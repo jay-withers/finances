@@ -10,11 +10,13 @@ It runs in three places, through jay-withers/appkit's `appkit.integrity`:
 
 - `store.save` refuses to write a document that breaks a rule, so a route bug
   can't put one in storage.
-- `selfcheck` runs it, with appkit's round trip, against the live document
-  after every deploy. A release whose model would drop a stored value, or that
-  reads the document as broken, is rolled back before it writes.
-- the nightly backup runs it after the copy is safe in R2, so a document that
-  went bad some other way fires the job-failure alert.
+- `selfcheck` runs appkit's round trip (not these rules) against the live
+  document after every deploy, so a release whose model would drop a stored
+  value is rolled back before it writes. A deploy can't change the data, and
+  one old violation would otherwise block every release.
+- the nightly backup runs it on the bytes it copied, after every copy is safe
+  in R2, so a document that went bad some other way fires the job-failure
+  alert.
 
 **A problem names a list and an id, never an amount, a name or a note.** These
 lines reach Log Analytics. Ids are random hex (`model.new_id`). Not an index
