@@ -56,7 +56,7 @@ make validate       # terraform validate, no credentials; plan/apply/fmt/init as
 
 Python 3.14, FastAPI and Jinja2, server-rendered. One image, one process, no
 build step and no JavaScript framework — the same shape as
-[gym-log][gym-log], and for the same reason: there is nothing here a single
+[health][health], and for the same reason: there is nothing here a single
 rendered page cannot do.
 
 **There is no database.** The whole document is one JSON blob in Azure Storage,
@@ -134,7 +134,7 @@ make deploy IMAGE_TAG=v0.2.0
 
 Images are published to `ghcr.io/jay-withers/finances/finances` by
 `cd-publish` (called by `cd-tag`) on every merge that touches the application, tagged with both the release version and
-the commit SHA and never with a moving tag, matching [gym-log][gym-log] and
+the commit SHA and never with a moving tag, matching [health][health] and
 [market-agent][ma].
 
 The app is served at `finances.jaywithers.uk` with an Azure-managed
@@ -170,7 +170,7 @@ and the delete lock cover a bad write or a slip of the hand, but not losing
 the subscription. So the **backup job** (`finances backup`, 02:45 UTC daily)
 copies `finances.json` to the cloudflare repo's R2 bucket `jw-app-backups`,
 encrypted with [age](https://age-encryption.org). It works the same way as
-gym-log's:
+health's:
 
 - `daily/finances/<UTC timestamp>/finances.json.age`, kept 30 days.
 - `monthly/finances/<yyyy-mm>/finances.json.age`, written by the first
@@ -180,14 +180,14 @@ Nothing is overwritten: a rerun adds a copy beside the earlier ones.
 
 Each copy is encrypted to two keys. One is **the owner's**, whose public half
 is `backup_age_recipient` in `environments/dev.tfvars` (the same key as
-gym-log's) and whose private half lives only in a password manager. The other
+health's) and whose private half lives only in a password manager. The other
 is a **drill key** in Key Vault (`BACKUP-AGE-DRILL-KEY`). After every upload
 the job downloads the copy, decrypts it with the drill key, checks it matches
 byte for byte and parses it as a `Document`. Any failure fails the job, and
 the platform's job-failure alert fires.
 
 **Setup (once):** put the R2 token's two halves (an Account API token with
-**Object Read & Write** on `jw-app-backups` only; gym-log's works) in Key
+**Object Read & Write** on `jw-app-backups` only; health's works) in Key
 Vault as `R2-ACCESS-KEY-ID` and `R2-SECRET-ACCESS-KEY`, and generate the drill
 key straight into Key Vault. `make secrets` prints all three commands. Do it
 **before** a release with the backup job deploys: the job's selfcheck checks
@@ -207,5 +207,5 @@ Put it back with `az storage blob upload --auth-mode login --overwrite` into
 the container `make show` reads, or into a new storage account after a
 rebuild.
 
-[gym-log]: https://github.com/jay-withers/gym-log
+[health]: https://github.com/jay-withers/health
 [ma]: https://github.com/jay-withers/market-agent

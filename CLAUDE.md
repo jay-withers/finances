@@ -13,7 +13,7 @@ scheduled job (`finances digest`, Sundays 17:00 UTC) on the **shared** Container
 Apps environment from
 [jay-withers/azure-container-apps](https://github.com/jay-withers/azure-container-apps),
 with its own identity, Key Vault and storage account. Shaped like
-[gym-log](https://github.com/jay-withers/gym-log): when in doubt, follow it.
+[health](https://github.com/jay-withers/health): when in doubt, follow it.
 
 ## Money and the document: decisions not to re-litigate
 
@@ -32,7 +32,7 @@ with its own identity, Key Vault and storage account. Shaped like
 
 ## Storage: the inversion from repo-agent
 
-`store.py` comes from gym-log (which adapted repo-agent's), and **the error
+`store.py` comes from health (which adapted repo-agent's), and **the error
 handling is deliberately the opposite of repo-agent's**: reads raise, writes
 raise, and the only tolerated absence is a blob that has never existed. An
 empty document returned on a bad read would show the savings as zero and the
@@ -63,7 +63,7 @@ next save would write that back.
 ## Shared code: appkit, and the copies that remain
 
 [jay-withers/appkit](https://github.com/jay-withers/appkit) holds what career,
-finances and gym-log used to copy: `appkit.headers` (security headers and the
+finances and health used to copy: `appkit.headers` (security headers and the
 CSP nonce), `appkit.manifest` (`/manifest.json`, opening on `/`),
 `appkit.passcode` (`api/deps.py` only names the cookie),
 `appkit.keyvault` (`settings.py` keeps `Settings` and the cached
@@ -78,7 +78,7 @@ Log Analytics as console logs, not App Insights traces.
 The rest are still copies, each with a header naming where it came from. Fix a
 bug in every copy.
 
-- `telemetry.py`: from gym-log ← repo-agent ← market-agent.
+- `telemetry.py`: from health ← repo-agent ← market-agent.
 - `mailer.py`: from market-agent. security-testing's `mailer.py` is adapted
   from this one ("fix contract bugs in both").
 - `scripts/check-tf-standards.sh`: shared verbatim with the Terraform repos.
@@ -185,7 +185,7 @@ document in a way the previous version can't read.**
 ## Testing
 
 `make test` is pytest, flat `tests/`, one file per module. `filterwarnings =
-["error"]`, with one ignore for starlette's `TestClient` import (gym-log and
+["error"]`, with one ignore for starlette's `TestClient` import (health and
 market-agent carry the same one).
 
 - `conftest.py` clears `STATE_CONTAINER_URL`, `KEY_VAULT_URI` and
@@ -242,7 +242,7 @@ diff gate with a test that only asserts a mock; test the behaviour.
 
 - Both stages come from `jay-withers/dev-containers`: `python-app-builder` and
   `python-app`, which **must be the same version**. The builder is built FROM
-  the runtime, so they share one interpreter; a mismatch once gave gym-log an
+  the runtime, so they share one interpreter; a mismatch once gave health an
   image with no site-packages on `sys.path`.
 - Build `--platform linux/amd64` (the Makefile does). Container Apps is
   amd64-only.
