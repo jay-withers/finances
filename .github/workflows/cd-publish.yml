@@ -56,7 +56,7 @@ jobs:
       id-token: write # provenance and SBOM attestations
       attestations: write
       security-events: write # Trivy findings to code scanning
-    uses: jay-withers/workflows/.github/workflows/docker.yml@591303373c157fb12b428f3aa0dd4fc696a73f57 # v1.28.5
+    uses: jay-withers/workflows/.github/workflows/docker.yml@3ef452f7d5559c0f1002253faadd399e87b2931c # v1.32.1
     with:
       images: |
         [{"name": "finances", "context": "."}]
@@ -80,7 +80,7 @@ jobs:
       id-token: write
       contents: read
       issues: write # the deploy-failed issue
-    uses: jay-withers/workflows/.github/workflows/container-apps-deploy.yml@b62ee5b1bb9038ec8b9827ec3c93c818c8d0da5b # v1.30.0
+    uses: jay-withers/workflows/.github/workflows/container-apps-deploy.yml@3ef452f7d5559c0f1002253faadd399e87b2931c # v1.32.1
     with:
       version: ${{ inputs.version }}
       # Load the home page (the login page) in Chromium during the smoke
