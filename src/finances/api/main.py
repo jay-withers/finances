@@ -18,7 +18,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
 
-from appkit import headers, health
+from appkit import csrf, headers, health
 from appkit.integrity import IntegrityError
 from fastapi import Depends, FastAPI, status
 from fastapi.responses import JSONResponse
@@ -62,6 +62,10 @@ def create_app() -> FastAPI:
         redoc_url=None,
         openapi_url=None,
     )
+
+    # Before headers, so a cross-site refusal carries the security headers too.
+
+    csrf.install(app)
 
     headers.install(app)
 

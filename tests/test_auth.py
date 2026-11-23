@@ -3,8 +3,15 @@
 from __future__ import annotations
 
 import pytest
+from appkit import csrf
+from fastapi.testclient import TestClient
 
 from finances.api import deps
+
+
+def login_data(client: TestClient, passcode: str) -> dict[str, str]:
+    """What the login form posts: the passcode and the page's CSRF token."""
+    return {"passcode": passcode, "csrf_token": csrf.token_in(client.get("/login").text)}
 
 
 def test_every_page_redirects_to_login_when_anonymous(anonymous):
@@ -51,13 +58,13 @@ def test_login_form_is_reachable(anonymous):
 
 
 def test_wrong_passcode_is_refused(anonymous):
-    response = anonymous.post("/login", data={"passcode": "nope"})
+    response = anonymous.post("/login", data=login_data(anonymous, "nope"))
     assert response.status_code == 401
     assert deps.COOKIE_NAME not in response.cookies
 
 
 def test_correct_passcode_sets_a_session(anonymous, passcode):
-    response = anonymous.post("/login", data={"passcode": passcode})
+    response = anonymous.post("/login", data=login_data(anonymous, passcode))
     assert response.status_code == 303
     cookie = response.cookies.get(deps.COOKIE_NAME)
     assert cookie and deps.valid(cookie)
@@ -155,3 +162,33 @@ def test_rotating_the_passcode_invalidates_sessions(monkeypatch):
     monkeypatch.setenv("APP_PASSCODE", "a-different-passcode")
     settings_module.secret.cache_clear()
     assert deps.valid(token) is False
+
+
+def test_a_login_without_the_csrf_token_is_refused_even_with_the_passcode(anonymous):
+    anonymous.get("/login")
+    response = anonymous.post("/login", data={"passcode": "test-passcode"}, follow_redirects=False)
+    assert response.status_code == 403
+    assert "expired" in response.text
+    # The re-render carries a token that works, so a retry signs in.
+    retry = {"passcode": "test-passcode", "csrf_token": csrf.token_in(response.text)}
+    assert anonymous.post("/login", data=retry, follow_redirects=False).status_code == 303
+
+
+def test_a_browser_that_keeps_no_cookie_is_told_cookies_are_needed(anonymous):
+    token = csrf.token_in(anonymous.get("/login").text)
+    anonymous.cookies.clear()
+    data = {"passcode": "test-passcode", "csrf_token": token}
+    response = anonymous.post("/login", data=data, follow_redirects=False)
+    assert response.status_code == 403
+    assert "needs cookies" in response.text
+
+
+def test_a_cross_site_post_is_refused(anonymous):
+    response = anonymous.post(
+        "/login",
+        data=login_data(anonymous, "test-passcode"),
+        headers={"Sec-Fetch-Site": "cross-site"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 403
+    assert "content-security-policy" in response.headers

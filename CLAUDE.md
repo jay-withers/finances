@@ -64,7 +64,9 @@ next save would write that back.
 
 [jay-withers/appkit](https://github.com/jay-withers/appkit) holds what career,
 finances and health used to copy: `appkit.headers` (security headers and the
-CSP nonce), `appkit.manifest` (`/manifest.json`, opening on `/`),
+CSP nonce), `appkit.csrf` (refuses cross-site POSTs, and the login form's
+`csrf_token`, checked before the passcode; tests sign in through
+`login_data()`), `appkit.manifest` (`/manifest.json`, opening on `/`),
 `appkit.passcode` (`api/deps.py` only names the cookie),
 `appkit.keyvault` (`settings.py` keeps `Settings` and the cached
 `secret`/`optional_secret`/`credential` wrappers the tests clear),
