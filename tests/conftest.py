@@ -18,9 +18,13 @@ from __future__ import annotations
 import os
 from collections.abc import Iterator
 from datetime import date
+from typing import TYPE_CHECKING
 
 import pytest
 from hypothesis import HealthCheck, settings
+
+if TYPE_CHECKING:
+    from fastapi.testclient import TestClient
 
 from finances import settings as settings_module
 from finances.model import (
@@ -33,6 +37,14 @@ from finances.model import (
     WealthAccount,
     WealthSnapshot,
 )
+
+
+def login_data(client: TestClient, passcode: str) -> dict[str, str]:
+    """What the login form posts: the passcode and the page's CSRF token."""
+    from appkit import csrf
+
+    return {"passcode": passcode, "csrf_token": csrf.token_in(client.get("/login").text)}
+
 
 PASSCODE = "test-passcode"
 
@@ -197,7 +209,7 @@ def client(stored: Document):
     from finances.api.main import create_app
 
     with TestClient(create_app(), base_url=BASE_URL) as test_client:
-        response = test_client.post("/login", data={"passcode": PASSCODE})
+        response = test_client.post("/login", data=login_data(test_client, PASSCODE))
         # Fail loudly here rather than leaving every test in the module to fail
         # on a redirect to /login.
         assert response.status_code == 200, "the fixture failed to log in"
