@@ -15,7 +15,16 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 
-from .model import Document, Pot, PotEntry, Renewal, WealthAccount, WealthSnapshot
+from .model import (
+    PURPOSES,
+    Document,
+    Pot,
+    PotEntry,
+    Purpose,
+    Renewal,
+    WealthAccount,
+    WealthSnapshot,
+)
 from .money import format_money
 from .settings import settings
 
@@ -227,18 +236,18 @@ class Summary:
     outgoings: int
     savings_and_spends: int
     spare: int
-    # The money-out lines ticked as debt. `outgoings` less this is the bills
-    # lines, which In / Out's footer shows: `bills` adds the bills pots.
-    debt_lines: int
-    # The same money again, by what it is for. `bills` is the money-out lines
-    # not ticked as debt plus the bills pots' top-ups; `debt` the ticked lines
-    # plus the debt pots'; `savings` every other pot's top-up; `transfers`
-    # what the payday transfers move besides the pots. All four sum to
-    # `outgoings + savings_and_spends`.
+    # The active money-out lines' total by purpose, every purpose present,
+    # for In / Out's footer. `bills` and the rest below add the pots.
+    lines: dict[Purpose, int]
+    # The same income again, by what it is for. Each is the money-out lines
+    # with that purpose plus the payday top-ups of the pots with it. `spends`
+    # also takes everything else: the payday transfers besides the pots (the
+    # First Direct one) and whatever is left over. So the four always sum to
+    # `income`, and `spends` is negative when the plan spends more than that.
     bills: int
-    debt: int
     savings: int
-    transfers: int
+    spends: int
+    debt: int
 
 
 def transfer_amount(doc: Document, transfer_id: str) -> int | None:
@@ -265,34 +274,35 @@ def summary(doc: Document) -> Summary:
     income = sum(line.amount_pence for line in doc.income if line.active)
     active_out = [line for line in doc.outgoings if line.active]
     outgoings = sum(line.amount_pence for line in active_out)
-    debt_lines = sum(line.amount_pence for line in active_out if line.debt)
+    lines = {p: sum(x.amount_pence for x in active_out if x.purpose == p) for p in PURPOSES}
 
     # The pots reach the plan only through a transfer that tracks them, so
-    # their top-ups are split by purpose per such transfer.
-    pots = payday_pots(doc)
-    pot_debt = sum(p.monthly_pence for p in pots if p.purpose == "debt")
-    pot_bills = sum(p.monthly_pence for p in pots if p.purpose == "bills")
-    pot_savings = pots_monthly_total(doc) - pot_debt - pot_bills
+    # their top-ups count once per such transfer.
+    tracking = sum(1 for t in doc.transfers if t.tracks_pots)
+    pots = {
+        p: sum(x.monthly_pence for x in payday_pots(doc) if x.purpose == p) * tracking
+        for p in PURPOSES
+    }
 
     committed = 0
-    tracking = 0
     for transfer in doc.transfers:
         amount = transfer_amount(doc, transfer.id)
         if amount is not None:
             committed += amount
-        if transfer.tracks_pots:
-            tracking += 1
+    spare = income - outgoings - committed
+    # What the payday transfers move besides the pots.
+    others = committed - sum(pots.values())
 
     return Summary(
         income=income,
         outgoings=outgoings,
         savings_and_spends=committed,
-        spare=income - outgoings - committed,
-        debt_lines=debt_lines,
-        bills=outgoings - debt_lines + pot_bills * tracking,
-        debt=debt_lines + pot_debt * tracking,
-        savings=pot_savings * tracking,
-        transfers=committed - (pot_debt + pot_bills + pot_savings) * tracking,
+        spare=spare,
+        lines=lines,
+        bills=lines["bills"] + pots["bills"],
+        savings=lines["savings"] + pots["savings"],
+        spends=lines["spends"] + pots["spends"] + others + spare,
+        debt=lines["debt"] + pots["debt"],
     )
 
 
@@ -305,50 +315,42 @@ class PlanItem:
     href: str  # where it is edited
 
 
-PLAN_PARTS = ("bills", "savings", "debt", "transfers")
+PLAN_PARTS: tuple[Purpose, ...] = PURPOSES
+
+# The item standing for what is left over, in the spends breakdown, and for
+# what the plan spends beyond income when nothing is.
+LEFT_OVER = "Left over"
+OVERSPENT = "Planned beyond income"
 
 
 def plan_breakdown(doc: Document, part: str) -> list[PlanItem]:
-    """What makes up one of `summary`'s bills, savings, debt or transfers,
+    """What makes up one of `summary`'s bills, savings, spends or debt,
     largest first. The items always sum to that figure.
 
     A pot counts once for each transfer that tracks the pots, as `summary`
     counts it; there is normally exactly one.
     """
-    active_out = [line for line in doc.outgoings if line.active]
+    if part not in PLAN_PARTS:
+        raise ValueError(f"no such part of the plan: {part}")
     tracking = sum(1 for t in doc.transfers if t.tracks_pots)
-    pots = payday_pots(doc)
-    items: list[PlanItem] = []
-    if part == "bills":
-        items = [
-            PlanItem(x.name, x.amount_pence, f"/monthly/{x.id}") for x in active_out if not x.debt
-        ]
+    items = [
+        PlanItem(x.name, x.amount_pence, f"/monthly/{x.id}")
+        for x in doc.outgoings
+        if x.active and x.purpose == part
+    ]
+    items += [
+        PlanItem(p.name, p.monthly_pence * tracking, f"/pots/{p.id}")
+        for p in payday_pots(doc)
+        if p.purpose == part
+    ]
+    if part == "spends":
         items += [
-            PlanItem(p.name, p.monthly_pence * tracking, f"/pots/{p.id}")
-            for p in pots
-            if p.purpose == "bills"
-        ]
-    elif part == "debt":
-        items = [PlanItem(x.name, x.amount_pence, f"/monthly/{x.id}") for x in active_out if x.debt]
-        items += [
-            PlanItem(p.name, p.monthly_pence * tracking, f"/pots/{p.id}")
-            for p in pots
-            if p.purpose == "debt"
-        ]
-    elif part == "savings":
-        items = [
-            PlanItem(p.name, p.monthly_pence * tracking, f"/pots/{p.id}")
-            for p in pots
-            if p.purpose == "savings"
-        ]
-    elif part == "transfers":
-        items = [
             PlanItem(t.label, t.amount_pence, "/payday")
             for t in doc.transfers
             if not t.tracks_pots and t.amount_pence is not None
         ]
-    else:
-        raise ValueError(f"no such part of the plan: {part}")
+        spare = summary(doc).spare
+        items.append(PlanItem(LEFT_OVER if spare >= 0 else OVERSPENT, spare, "/monthly"))
     return sorted((i for i in items if i.amount_pence), key=lambda i: (-i.amount_pence, i.label))
 
 

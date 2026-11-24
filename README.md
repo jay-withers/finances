@@ -14,10 +14,11 @@ It exists to make three recurring jobs quicker and harder to forget:
 
 The home screen is a tile for each area, each saying whether it needs
 opening. **Today** lists what needs attention right now, and a scheduled job
-emails the same list every Sunday evening. **Insights** charts the last twelve months of
-savings: the balance, what went in and out, how each pot is heading, and where
-the monthly income goes: bills, savings and debt apart. A Money out line or a
-pot ticked as a debt counts as debt.
+emails the same list every Sunday evening. **Insights** opens on where the monthly income
+goes, split into bills, savings, spends and debt, then charts the last twelve
+months of the savings balance and how each pot is heading. Each Money out line
+and each pot is marked as one of the four; spends also takes the payday
+transfers besides the pots and whatever is left over.
 
 ## Running it locally
 

@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_purpose.html" import purpose_field %}
 {% block subtitle %}spare {{ summary.spare | money }}{% endblock %}
 {% block body %}
 
@@ -23,11 +24,11 @@
 
 {# Read only, like the pots list: a line opens on its own page, already in
    edit mode. #}
-{% macro rows(lines) %}
+{% macro rows(lines, out=false) %}
   {% for line in lines %}
     <tr class="{{ '' if line.active else 'dim' }}">
       <td><a href="/monthly/{{ line.id }}" style="text-decoration:none">{{ line.name }}</a>
-        {% if line.debt %}<span class="muted">&middot; debt</span>{% endif %}
+        {% if out and line.purpose != 'bills' %}<span class="muted">&middot; {{ line.purpose }}</span>{% endif %}
         {% if not line.active %}<span class="muted">&middot; inactive</span>{% endif %}</td>
       <td class="num">{{ line.amount_pence | money }}</td>
     </tr>
@@ -44,11 +45,13 @@
 
 <h2>Money out</h2>
 <table>
-  <tbody>{{ rows(doc.outgoings | sort(attribute="amount_pence", reverse=true)) }}</tbody>
+  <tbody>{{ rows(doc.outgoings | sort(attribute="amount_pence", reverse=true), out=true) }}</tbody>
   <tfoot>
+    {% if summary.lines.values() | select | list %}
     <tr><td colspan="2" class="muted">
-      Bills {{ (summary.outgoings - summary.debt_lines) | money }} &middot; Debt {{ summary.debt_lines | money }}
+      {% for purpose, amount in summary.lines.items() if amount %}{{ purpose | capitalize }} {{ amount | money }}{{ ' &middot; ' | safe if not loop.last }}{% endfor %}
     </td></tr>
+    {% endif %}
     <tr><th>Total</th><th class="num">{{ summary.outgoings | money }}</th></tr>
   </tfoot>
 </table>
@@ -63,10 +66,8 @@
         <option value="income">Money in</option>
       </select>
     </div>
-    <div class="field">
-      <label><input type="checkbox" name="debt" value="1" style="width:auto">
-        A debt (money out only)</label>
-    </div>
+    {# Money out only: a money-in line ignores it. #}
+    {{ purpose_field('bills') }}
     <div class="row">
       <div class="field">
         <label for="name">Name</label>

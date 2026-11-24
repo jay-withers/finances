@@ -24,6 +24,7 @@ PAGES = [
     "/wealth",
     "/insights",
     "/insights/debt",
+    "/insights/spends",
 ]
 
 
