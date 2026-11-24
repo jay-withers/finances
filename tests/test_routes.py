@@ -12,6 +12,7 @@ import pytest
 
 from finances import calc, store
 from finances.model import Document, PaydayRun, WealthAccount, WealthSnapshot
+from finances.money import format_pounds
 
 
 # Lookups that return None for "not there". In a test that expects it there,
@@ -446,14 +447,7 @@ def test_insights_shows_the_year_the_pots_and_the_split(client, stored, november
 def test_insights_shows_debt_savings_and_spends_apart(client, stored, november):
     mortgage = next(line for line in stored.outgoings if line.name == "Mortgage")
     car = pot_named(stored, "Car")
-    client.post(
-        "/monthly",
-        data={
-            f"present_{mortgage.id}": "1",
-            f"active_{mortgage.id}": "1",
-            f"debt_{mortgage.id}": "1",
-        },
-    )
+    edit_line(client, mortgage, debt="1")
     client.post(
         f"/pots/{car.id}/edit", data={"name": "Car", "monthly": "50", "counts": "1", "debt": "1"}
     )
@@ -496,131 +490,157 @@ def test_the_nav_links_to_insights(client):
 # --- the monthly picture ------------------------------------------------------
 
 
-def test_bulk_save_updates_every_amount(client, stored):
-    mortgage = next(line for line in stored.outgoings if line.name == "Mortgage")
-    salary = next(line for line in stored.income if line.name == "Salary")
-
-    client.post(
-        "/monthly",
-        data={
-            f"amount_{mortgage.id}": "950",
-            f"name_{mortgage.id}": "Mortgage",
-            f"present_{mortgage.id}": "1",
-            f"active_{mortgage.id}": "1",
-            f"amount_{salary.id}": "4100",
-            f"name_{salary.id}": "Salary",
-            f"present_{salary.id}": "1",
-            f"active_{salary.id}": "1",
-        },
-    )
-
-    document = reload()
-    assert (
-        next(line for line in document.outgoings if line.id == mortgage.id).amount_pence == 95_000
-    )
-    assert next(line for line in document.income if line.id == salary.id).amount_pence == 410_000
+def edit_line(client, line, **changes):
+    """Save a line's edit form as the page would send it, with `changes` on top."""
+    side = "income" if line.id in [x.id for x in reload().income] else "outgoing"
+    data = {
+        "name": line.name,
+        "amount": format_pounds(line.amount_pence),
+        "side": side,
+        "was": side,
+        "active": "1" if line.active else "",
+        "debt": "1" if line.debt else "",
+    }
+    data.update(changes)
+    return client.post(f"/monthly/{line.id}/edit", data={k: v for k, v in data.items() if v})
 
 
-def test_unticking_a_line_deactivates_it(client, stored):
-    """An unchecked checkbox submits nothing, so `present_` is what marks the row."""
-    bills = next(line for line in stored.outgoings if line.name == "Bills")
-    client.post(
-        "/monthly",
-        data={
-            f"amount_{bills.id}": "100",
-            f"name_{bills.id}": "Bills",
-            f"present_{bills.id}": "1",
-            # no active_ key: unticked
-        },
-    )
-    assert next(line for line in reload().outgoings if line.id == bills.id).active is False
-
-
-def test_a_row_not_on_the_form_keeps_its_active_flag(client, stored):
-    """Without `present_`, "unticked" and "not rendered" would look identical."""
-    bills = next(line for line in stored.outgoings if line.name == "Bills")
-    client.post("/monthly", data={f"amount_{bills.id}": "100"})
-    assert next(line for line in reload().outgoings if line.id == bills.id).active is True
-
-
-def test_ticking_debt_marks_a_money_out_line(client, stored):
-    mortgage = next(line for line in stored.outgoings if line.name == "Mortgage")
-    rendered = {f"present_{mortgage.id}": "1", f"active_{mortgage.id}": "1"}
-    client.post("/monthly", data={**rendered, f"debt_{mortgage.id}": "1"})
-    assert next(x for x in reload().outgoings if x.id == mortgage.id).debt is True
-    # Unticked, on a rendered row, clears it.
-    client.post("/monthly", data=rendered)
-    assert next(x for x in reload().outgoings if x.id == mortgage.id).debt is False
-
-
-def test_a_row_not_on_the_form_keeps_its_debt_flag(client, stored):
-    mortgage = next(line for line in stored.outgoings if line.name == "Mortgage")
-    client.post(
-        "/monthly",
-        data={
-            f"present_{mortgage.id}": "1",
-            f"debt_{mortgage.id}": "1",
-            f"active_{mortgage.id}": "1",
-        },
-    )
-    client.post("/monthly", data={f"amount_{mortgage.id}": "900"})
-    assert next(x for x in reload().outgoings if x.id == mortgage.id).debt is True
-
-
-def test_the_monthly_page_has_a_debt_box_on_money_out_only(client, stored):
-    mortgage = next(line for line in stored.outgoings if line.name == "Mortgage")
-    salary = next(line for line in stored.income if line.name == "Salary")
-    client.post(
-        "/monthly",
-        data={
-            f"present_{mortgage.id}": "1",
-            f"active_{mortgage.id}": "1",
-            f"debt_{mortgage.id}": "1",
-        },
-    )
+def test_the_monthly_page_lists_lines_as_links(client, stored):
     html = client.get("/monthly").text
-    box = html[html.index(f'name="debt_{mortgage.id}"') :][:200]
-    assert "checked" in box
-    assert f'name="debt_{salary.id}"' not in html
-    assert "Debt £900" in html  # the breakdown under Money out
+    for line in [*stored.income, *stored.outgoings]:
+        assert f'href="/monthly/{line.id}"' in html
+    assert 'name="amount_' not in html  # read only: no inline boxes
+    assert 'name="debt_' not in html
+    assert "inactive" in html  # "Old thing"
+
+
+def test_a_line_opens_in_edit_mode(client, stored):
+    mortgage = next(line for line in stored.outgoings if line.name == "Mortgage")
+    html = client.get(f"/monthly/{mortgage.id}").text
+    assert f'action="/monthly/{mortgage.id}/edit"' in html
+    assert 'value="Mortgage"' in html and 'value="900.00"' in html
+    assert '<option value="outgoing" selected>' in html
+    assert f'action="/monthly/{mortgage.id}/delete"' in html
+
+
+def test_an_unknown_line_goes_back_to_the_list(client, stored):
+    response = client.get("/monthly/nosuchid", follow_redirects=False)
+    assert response.status_code == 303
+    assert response.headers["location"] == "/monthly"
+
+
+def test_editing_a_line_saves_every_field(client, stored):
+    mortgage = next(line for line in stored.outgoings if line.name == "Mortgage")
+    edit_line(client, mortgage, name="Home loan", amount="950", debt="1", active="")
+    line = next(x for x in reload().outgoings if x.id == mortgage.id)
+    assert (line.name, line.amount_pence, line.debt, line.active) == (
+        "Home loan",
+        95_000,
+        True,
+        False,
+    )
+    assert "debt" in client.get("/monthly").text
+
+
+def test_unticking_debt_clears_it(client, stored):
+    mortgage = next(line for line in stored.outgoings if line.name == "Mortgage")
+    edit_line(client, mortgage, debt="1")
+    edit_line(client, mortgage, debt="")
+    assert next(x for x in reload().outgoings if x.id == mortgage.id).debt is False
 
 
 def test_switching_a_lines_side_moves_it(client, stored):
     bills = next(line for line in stored.outgoings if line.name == "Bills")
     salary = next(line for line in stored.income if line.name == "Salary")
-    client.post(
-        "/monthly",
-        data={f"side_{bills.id}": "income", f"side_{salary.id}": "outgoing"},
-    )
+    edit_line(client, bills, side="income")
+    edit_line(client, salary, side="outgoing")
     document = reload()
-    assert document.income[-1] == bills
-    assert document.outgoings[-1] == salary
+    assert document.income[-1].id == bills.id
+    assert document.outgoings[-1].id == salary.id
     assert bills.id not in [x.id for x in document.outgoings]
     assert salary.id not in [x.id for x in document.income]
 
 
 def test_a_debt_moved_to_money_in_loses_its_flag(client, stored):
-    """Income rows have no debt box, so the flag can't be seen or cleared there."""
+    """Only money out can be a debt, even with the box still ticked."""
     mortgage = next(line for line in stored.outgoings if line.name == "Mortgage")
-    rendered = {f"present_{mortgage.id}": "1", f"active_{mortgage.id}": "1"}
-    client.post("/monthly", data={**rendered, f"debt_{mortgage.id}": "1"})
-    client.post("/monthly", data={**rendered, f"side_{mortgage.id}": "income"})
-    client.post("/monthly", data={**rendered, f"side_{mortgage.id}": "outgoing"})
-    assert next(x for x in reload().outgoings if x.id == mortgage.id).debt is False
+    edit_line(client, mortgage, side="income", debt="1")
+    assert next(x for x in reload().income if x.id == mortgage.id).debt is False
 
 
-def test_a_line_kept_on_its_side_stays_where_it_is(client, stored):
+def test_a_save_from_a_stale_page_keeps_another_tabs_move(client, stored):
+    """Two people share the passcode. A page opened before the other moved
+    the line still says "Money out"; saving it must not move the line back."""
     bills = next(line for line in stored.outgoings if line.name == "Bills")
-    client.post("/monthly", data={f"side_{bills.id}": "outgoing"})
+    edit_line(client, bills, side="income")  # tab B
+    # Tab A, opened earlier: rendered as money out, side left alone, amount fixed.
+    client.post(
+        f"/monthly/{bills.id}/edit",
+        data={
+            "name": "Bills",
+            "amount": "120",
+            "side": "outgoing",
+            "was": "outgoing",
+            "active": "1",
+        },
+    )
+    line = next(x for x in reload().income if x.id == bills.id)
+    assert line.amount_pence == 12_000
+
+
+def test_a_save_without_an_amount_is_refused_not_zeroed(client, stored):
+    mortgage = next(line for line in stored.outgoings if line.name == "Mortgage")
+    response = client.post(
+        f"/monthly/{mortgage.id}/edit",
+        data={"name": "Mortgage", "side": "outgoing", "was": "outgoing", "active": "1"},
+    )
+    assert response.status_code == 422
     assert reload() == stored
+
+
+def test_editing_a_line_in_place_keeps_the_order(client, stored):
+    bills = next(line for line in stored.outgoings if line.name == "Bills")
+    edit_line(client, bills, amount="110")
+    document = reload()
+    assert [x.id for x in document.outgoings] == [x.id for x in stored.outgoings]
+    assert next(x for x in document.outgoings if x.id == bills.id).amount_pence == 11_000
+
+
+def test_the_money_out_footer_splits_bills_and_debt(client, stored):
+    mortgage = next(line for line in stored.outgoings if line.name == "Mortgage")
+    edit_line(client, mortgage, debt="1")
+    assert "Bills £100 &middot; Debt £900" in client.get("/monthly").text
 
 
 def test_an_unknown_side_is_refused(client, stored):
     bills = next(line for line in stored.outgoings if line.name == "Bills")
-    response = client.post("/monthly", data={f"side_{bills.id}": "sideways"})
+    response = edit_line(client, bills, side="sideways")
     assert response.status_code == 422
     assert response.json() == {"detail": "A line is either money in or money out."}
     assert reload() == stored
+
+
+def test_editing_a_deleted_line_says_so(client, stored):
+    response = client.post(
+        "/monthly/nosuchid/edit", data={"name": "X", "amount": "1", "side": "outgoing"}
+    )
+    assert response.status_code == 404
+    assert response.json() == {"detail": "That line no longer exists."}
+
+
+def test_a_typo_in_a_lines_amount_is_refused(client, stored):
+    bills = next(line for line in stored.outgoings if line.name == "Bills")
+    response = edit_line(client, bills, amount="ten")
+    assert response.status_code == 422
+    assert reload() == stored
+
+
+def test_a_pot_opens_in_edit_mode(client, stored):
+    car = pot_named(stored, "Car")
+    html = client.get(f"/pots/{car.id}").text
+    form = html.index(f'action="/pots/{car.id}/edit"')
+    assert "Edit this pot" not in html  # not behind a details toggle
+    assert form < html.index("<h2>Record</h2>")  # the first thing on the page
 
 
 def test_add_an_outgoing_debt(client):
@@ -1178,3 +1198,36 @@ def test_a_valuation_for_an_account_that_no_longer_exists_says_so(client, stored
     assert response.status_code == 404
     assert response.json() == {"detail": "That account no longer exists."}
     assert reload() == stored
+
+
+# --- the plan's breakdowns ----------------------------------------------------
+
+
+def test_each_insights_tile_links_to_its_breakdown(client, stored, november):
+    html = client.get("/insights").text
+    for part in ("bills", "savings", "debt", "transfers"):
+        assert f'href="/insights/{part}"' in html
+
+
+def test_a_breakdown_lists_what_makes_up_the_figure(client, stored, november):
+    mortgage = next(line for line in stored.outgoings if line.name == "Mortgage")
+    car = pot_named(stored, "Car")
+    edit_line(client, mortgage, debt="1")
+    client.post(
+        f"/pots/{car.id}/edit", data={"name": "Car", "monthly": "50", "counts": "1", "debt": "1"}
+    )
+    html = client.get("/insights/debt").text
+    assert "Debt, £950 a month" in html
+    assert f'href="/monthly/{mortgage.id}"' in html and f'href="/pots/{car.id}"' in html
+    bills = client.get("/insights/bills").text
+    assert "Bills, £100 a month" in bills and "Mortgage" not in bills
+
+
+def test_an_empty_breakdown_says_why(client, stored, november):
+    assert "Nothing is ticked as a debt" in client.get("/insights/debt").text
+
+
+def test_an_unknown_breakdown_goes_back_to_insights(client, stored, november):
+    response = client.get("/insights/lottery", follow_redirects=False)
+    assert response.status_code == 303
+    assert response.headers["location"] == "/insights"

@@ -50,6 +50,9 @@
                color: #101014; padding: 0 6px; line-height: 28px; overflow: hidden;
                white-space: nowrap; }
 
+  a.figure.tile, .legend a.part { color: inherit; text-decoration: none; }
+  a.figure.tile:hover, a.figure.tile:focus { border-color: var(--dim); }
+  .legend a.part:hover, .legend a.part:focus { color: var(--text); text-decoration: underline; }
   .verdict { white-space: nowrap; font-size: 13px; }
   .verdict.warn { color: var(--warn); }
   .verdict.bad { color: var(--bad); }
@@ -196,19 +199,18 @@
 
 {# --- the monthly plan --------------------------------------------------------- #}
 <h2>Where the income goes</h2>
+{# Each tile opens a read-only list of what makes it up. #}
 <div class="figures">
-  <div class="figure">
-    <div class="label"><span class="swatch c-out"></span>Bills a month</div>
-    <div class="value">{{ summary.bills | money }}</div>
-  </div>
-  <div class="figure">
-    <div class="label"><span class="swatch c-save"></span>Savings a month</div>
-    <div class="value">{{ summary.savings | money }}</div>
-  </div>
-  <div class="figure">
-    <div class="label"><span class="swatch c-debt"></span>Debt a month</div>
-    <div class="value">{{ summary.debt | money }}</div>
-  </div>
+  {% for part, label, css, amount in [
+       ("bills", "Bills a month", "c-out", summary.bills),
+       ("savings", "Savings a month", "c-save", summary.savings),
+       ("debt", "Debt a month", "c-debt", summary.debt),
+       ("transfers", "Other transfers a month", "c-pots", summary.transfers)] %}
+    <a class="figure tile" href="/insights/{{ part }}">
+      <div class="label"><span class="swatch {{ css }}"></span>{{ label }}</div>
+      <div class="value">{{ amount | money }}</div>
+    </a>
+  {% endfor %}
 </div>
 <p class="muted" style="margin-top:0">Savings are the pots' monthly top-ups. Debt is
   every Money out line on <a href="/monthly">In / Out</a> and every pot that is ticked
@@ -226,7 +228,7 @@
     </div>
     <div class="legend">
       {% for p in split %}
-        <span><span class="swatch {{ p.css }}"></span>{{ p.label }} {{ p.amount_pence | money }}</span>
+        {% if p.part %}<a class="part" href="/insights/{{ p.part }}">{% else %}<span>{% endif %}<span class="swatch {{ p.css }}"></span>{{ p.label }} {{ p.amount_pence | money }}{% if p.part %}</a>{% else %}</span>{% endif %}
       {% endfor %}
     </div>
   {% elif summary.income > 0 %}

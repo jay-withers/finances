@@ -17,6 +17,32 @@
   </div>
 </div>
 
+{# Opens in edit mode, as a line on In / Out does. #}
+<form method="post" action="/pots/{{ pot.id }}/edit" class="card">
+  <div class="field">
+    <label for="name">Name</label>
+    <input type="text" id="name" name="name" value="{{ pot.name }}" required>
+  </div>
+  <div class="field">
+    <label for="monthly">Monthly amount</label>
+    <input type="number" id="monthly" name="monthly" step="0.01" inputmode="decimal"
+           value="{{ pot.monthly_pence | pounds }}">
+  </div>
+  <div class="field">
+    <label><input type="checkbox" name="counts" value="1" style="width:auto"
+           {{ 'checked' if pot.counts_toward_payday }}> Top up on payday</label>
+  </div>
+  <div class="field">
+    <label><input type="checkbox" name="archived" value="1" style="width:auto"
+           {{ 'checked' if pot.archived }}> Archived</label>
+  </div>
+  <div class="field">
+    <label><input type="checkbox" name="debt" value="1" style="width:auto"
+           {{ 'checked' if pot.debt }}> A debt (its top-up counts as debt, not savings)</label>
+  </div>
+  <button type="submit">Save</button>
+</form>
+
 <h2>Record</h2>
 <form method="post" action="/pots/{{ pot.id }}/entry" class="card">
   <div class="row">
@@ -56,31 +82,4 @@
   <p class="muted">Nothing recorded yet.</p>
 {% endfor %}
 
-<details>
-  <summary>Edit this pot</summary>
-  <form method="post" action="/pots/{{ pot.id }}/edit" class="card">
-    <div class="field">
-      <label for="name">Name</label>
-      <input type="text" id="name" name="name" value="{{ pot.name }}" required>
-    </div>
-    <div class="field">
-      <label for="monthly">Monthly amount</label>
-      <input type="number" id="monthly" name="monthly" step="0.01" inputmode="decimal"
-             value="{{ pot.monthly_pence | pounds }}">
-    </div>
-    <div class="field">
-      <label><input type="checkbox" name="counts" value="1" style="width:auto"
-             {{ 'checked' if pot.counts_toward_payday }}> Top up on payday</label>
-    </div>
-    <div class="field">
-      <label><input type="checkbox" name="archived" value="1" style="width:auto"
-             {{ 'checked' if pot.archived }}> Archived</label>
-    </div>
-    <div class="field">
-      <label><input type="checkbox" name="debt" value="1" style="width:auto"
-             {{ 'checked' if pot.debt }}> A debt (its top-up counts as debt, not savings)</label>
-    </div>
-    <button type="submit">Save</button>
-  </form>
-</details>
 {% endblock %}

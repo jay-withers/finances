@@ -292,6 +292,55 @@ def summary(doc: Document) -> Summary:
     )
 
 
+@dataclass(frozen=True)
+class PlanItem:
+    """One line, pot or transfer in a part of the monthly plan."""
+
+    label: str
+    amount_pence: int
+    href: str  # where it is edited
+
+
+PLAN_PARTS = ("bills", "savings", "debt", "transfers")
+
+
+def plan_breakdown(doc: Document, part: str) -> list[PlanItem]:
+    """What makes up one of `summary`'s bills, savings, debt or transfers,
+    largest first. The items always sum to that figure.
+
+    A pot counts once for each transfer that tracks the pots, as `summary`
+    counts it; there is normally exactly one.
+    """
+    active_out = [line for line in doc.outgoings if line.active]
+    tracking = sum(1 for t in doc.transfers if t.tracks_pots)
+    pots = payday_pots(doc)
+    items: list[PlanItem] = []
+    if part == "bills":
+        items = [
+            PlanItem(x.name, x.amount_pence, f"/monthly/{x.id}") for x in active_out if not x.debt
+        ]
+    elif part == "debt":
+        items = [PlanItem(x.name, x.amount_pence, f"/monthly/{x.id}") for x in active_out if x.debt]
+        items += [
+            PlanItem(p.name, p.monthly_pence * tracking, f"/pots/{p.id}") for p in pots if p.debt
+        ]
+    elif part == "savings":
+        items = [
+            PlanItem(p.name, p.monthly_pence * tracking, f"/pots/{p.id}")
+            for p in pots
+            if not p.debt
+        ]
+    elif part == "transfers":
+        items = [
+            PlanItem(t.label, t.amount_pence, "/payday")
+            for t in doc.transfers
+            if not t.tracks_pots and t.amount_pence is not None
+        ]
+    else:
+        raise ValueError(f"no such part of the plan: {part}")
+    return sorted((i for i in items if i.amount_pence), key=lambda i: (-i.amount_pence, i.label))
+
+
 # --- renewals -----------------------------------------------------------------
 
 
