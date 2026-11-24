@@ -449,7 +449,8 @@ def test_insights_shows_debt_savings_and_spends_apart(client, stored, november):
     car = pot_named(stored, "Car")
     edit_line(client, mortgage, debt="1")
     client.post(
-        f"/pots/{car.id}/edit", data={"name": "Car", "monthly": "50", "counts": "1", "debt": "1"}
+        f"/pots/{car.id}/edit",
+        data={"name": "Car", "monthly": "50", "counts": "1", "purpose": "debt"},
     )
     html = client.get("/insights").text
     figures = html[html.index("Bills a month") :]
@@ -607,8 +608,14 @@ def test_editing_a_line_in_place_keeps_the_order(client, stored):
 
 
 def test_the_money_out_footer_splits_bills_and_debt(client, stored):
+    """Lines only: a bills pot isn't money out, so it stays off this footer."""
     mortgage = next(line for line in stored.outgoings if line.name == "Mortgage")
     edit_line(client, mortgage, debt="1")
+    car = pot_named(stored, "Car")
+    client.post(
+        f"/pots/{car.id}/edit",
+        data={"name": "Car", "monthly": "50", "counts": "1", "purpose": "bills"},
+    )
     assert "Bills £100 &middot; Debt £900" in client.get("/monthly").text
 
 
@@ -651,13 +658,48 @@ def test_add_an_outgoing_debt(client):
     assert next(x for x in reload().outgoings if x.name == "Loan").debt is True
 
 
-def test_add_and_edit_a_debt_pot(client, stored):
-    client.post("/pots/add", data={"name": "Car loan", "monthly": "80", "debt": "1"})
+def test_add_and_edit_a_pots_purpose(client, stored):
+    client.post("/pots/add", data={"name": "Car loan", "monthly": "80", "purpose": "debt"})
     pot = pot_named(reload(), "Car loan")
-    assert pot.debt is True
-    assert "debt" in client.get(f"/pots/{pot.id}").text
-    client.post(f"/pots/{pot.id}/edit", data={"name": "Car loan", "monthly": "80", "counts": "1"})
-    assert pot_named(reload(), "Car loan").debt is False
+    assert (pot.debt, pot.bills) == (True, False)
+    assert "&middot; debt" in client.get(f"/pots/{pot.id}").text
+    assert '<option value="debt" selected>' in client.get(f"/pots/{pot.id}").text
+
+    edit = {"name": "Car loan", "monthly": "80", "counts": "1"}
+    client.post(f"/pots/{pot.id}/edit", data={**edit, "purpose": "bills"})
+    pot = pot_named(reload(), "Car loan")
+    assert (pot.debt, pot.bills, pot.purpose) == (False, True, "bills")
+    assert "&middot; bills" in client.get("/pots").text
+
+    # Left out, as from a page loaded before the field existed: kept.
+    client.post(f"/pots/{pot.id}/edit", data=edit)
+    assert pot_named(reload(), "Car loan").purpose == "bills"
+    client.post(f"/pots/{pot.id}/edit", data={**edit, "purpose": "savings"})
+    assert pot_named(reload(), "Car loan").purpose == "savings"
+
+
+def test_an_unknown_pot_purpose_is_refused(client, stored):
+    car = pot_named(stored, "Car")
+    response = client.post(
+        f"/pots/{car.id}/edit", data={"name": "Car", "monthly": "50", "purpose": "lottery"}
+    )
+    assert response.status_code == 422
+    assert response.json() == {"detail": "A pot is for savings, bills or a debt."}
+    assert reload() == stored
+
+
+def test_a_bills_pot_counts_as_bills_not_savings(client, stored, november):
+    """A pot put by for a card cleared monthly is money already spent."""
+    car = pot_named(stored, "Car")
+    client.post(
+        f"/pots/{car.id}/edit",
+        data={"name": "Car", "monthly": "50", "counts": "1", "purpose": "bills"},
+    )
+    html = client.get("/insights").text
+    assert "Bills £1,050" in html and "Savings £450" in html
+    bills = client.get("/insights/bills").text
+    assert f'href="/pots/{car.id}"' in bills and "Bills, £1,050 a month" in bills
+    assert f'href="/pots/{car.id}"' not in client.get("/insights/savings").text
 
 
 def test_the_pot_tracking_transfer_cannot_be_overwritten(client, stored):
@@ -1214,13 +1256,21 @@ def test_a_breakdown_lists_what_makes_up_the_figure(client, stored, november):
     car = pot_named(stored, "Car")
     edit_line(client, mortgage, debt="1")
     client.post(
-        f"/pots/{car.id}/edit", data={"name": "Car", "monthly": "50", "counts": "1", "debt": "1"}
+        f"/pots/{car.id}/edit",
+        data={"name": "Car", "monthly": "50", "counts": "1", "purpose": "debt"},
     )
     html = client.get("/insights/debt").text
     assert "Debt, £950 a month" in html
     assert f'href="/monthly/{mortgage.id}"' in html and f'href="/pots/{car.id}"' in html
     bills = client.get("/insights/bills").text
     assert "Bills, £100 a month" in bills and "Mortgage" not in bills
+
+
+def test_an_empty_bills_breakdown_says_why(client, stored, november):
+    for line in stored.outgoings:
+        if line.active:
+            edit_line(client, line, debt="1")
+    assert "Nothing counts as bills" in client.get("/insights/bills").text
 
 
 def test_an_empty_breakdown_says_why(client, stored, november):

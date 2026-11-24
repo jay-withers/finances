@@ -15,6 +15,7 @@
   {% else %}
     <tr><td colspan="2" class="muted">
       {% if part == 'debt' %}Nothing is ticked as a debt, or the only debts are pots and no payday transfer follows the pots.
+      {% elif part == 'bills' %}Nothing counts as bills: every Money out line is ticked as a debt, and no pot marked as bills is topped up through a payday transfer that follows the pots.
       {% elif part == 'savings' %}No pot is topped up on payday, or no payday transfer follows the pots.
       {% else %}Nothing here.{% endif %}
     </td></tr>
@@ -24,9 +25,9 @@
 </table>
 
 <p class="muted">
-  {% if part == 'bills' %}Every active Money out line not ticked as a debt.
-  {% elif part == 'savings' %}The payday top-up of every pot not ticked as a debt.
-  {% elif part == 'debt' %}Money out lines and pots ticked as a debt.
+  {% if part == 'bills' %}Every active Money out line not ticked as a debt, and the payday top-up of every pot marked as bills.
+  {% elif part == 'savings' %}The payday top-up of every pot marked as savings.
+  {% elif part == 'debt' %}Money out lines ticked as a debt, and pots marked as a debt.
   {% else %}The payday transfers with an amount, besides the one that follows the pots.{% endif %}
 </p>
 {% endblock %}

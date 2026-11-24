@@ -708,6 +708,7 @@ def ledgers(draw: st.DrawFn) -> Document:
             counts_toward_payday=draw(st.booleans()),
             archived=draw(st.booleans()),
             debt=draw(st.booleans()),
+            bills=draw(st.booleans()),
         )
         for pot_id in POT_IDS[: draw(st.integers(min_value=0, max_value=len(POT_IDS)))]
     ]
@@ -808,7 +809,12 @@ def test_spare_is_always_what_is_left(
     # Split by purpose, the same money: every penny lands in exactly one part.
     parts = result.bills + result.debt + result.savings + result.transfers
     assert parts == result.outgoings + result.savings_and_spends
-    assert result.bills == sum(x.amount_pence for x in doc.outgoings if not x.debt)
+    bills_pots = sum(
+        p.monthly_pence
+        for p in doc.pots
+        if p.counts_toward_payday and not p.archived and p.bills and not p.debt
+    )
+    assert result.bills == sum(x.amount_pence for x in doc.outgoings if not x.debt) + bills_pots
     assert result.transfers == fixed
     # Each breakdown adds up to its figure on the insights page.
     for part in calc.PLAN_PARTS:
@@ -874,3 +880,16 @@ def test_a_retirement_estimate_never_compounds_past_the_cap(
 def test_plan_breakdown_refuses_an_unknown_part(doc: Document):
     with pytest.raises(ValueError, match="no such part"):
         calc.plan_breakdown(doc, "lottery")
+
+
+def test_a_bills_pot_moves_its_top_up_from_savings_to_bills(doc: Document):
+    car = next(p for p in doc.pots if p.name == "Car")
+    car.bills = True
+    totals = calc.summary(doc)
+    assert (totals.bills, totals.savings) == (100_000 + 5_000, 45_000)
+    assert [i.label for i in calc.plan_breakdown(doc, "bills")] == ["Mortgage", "Bills", "Car"]
+
+
+def test_a_pot_with_both_flags_counts_as_debt():
+    """The form sets one at most, but a stored document could carry both."""
+    assert Pot(name="x", debt=True, bills=True).purpose == "debt"

@@ -63,6 +63,8 @@ def sample_document(today: date | None = None) -> Document:
         Pot(name="House repairs", monthly_pence=12_000),
         # A pot saving up to clear a loan: its top-up counts as debt.
         Pot(name="Car loan", monthly_pence=8_000, debt=True),
+        # Put by for a bill paid in full each month: bills, not savings.
+        Pot(name="Card bill", monthly_pence=25_000, bills=True),
         # No monthly contribution: the general pot, excluded from payday.
         Pot(name="Savings", monthly_pence=0, counts_toward_payday=False),
     ]
@@ -72,7 +74,7 @@ def sample_document(today: date | None = None) -> Document:
     # something to show: opening balances a year back, eleven paydays since,
     # and the spends a household's pots exist for. This month's payday is left
     # unrun, so the payday screen has its button and the attention panel nags.
-    balances = [62_500, 4_000, 45_000, 18_000, 0, 540_000]
+    balances = [62_500, 4_000, 45_000, 18_000, 0, 25_000, 540_000]
     opened = _months_back(today, 12)
     for pot, balance in zip(pots, balances, strict=True):
         doc.pot_entries.append(
@@ -111,7 +113,7 @@ def sample_document(today: date | None = None) -> Document:
         (1, 1, -82_000, "Presents"),  # Christmas, whenever it last fell
         (2, 6, -64_000, "Service and tyres"),  # Car
         (3, 7, -95_000, "Roof repair"),  # House repairs
-        (5, 5, -150_000, "New sofa"),  # Savings
+        (6, 5, -150_000, "New sofa"),  # Savings
     ]
     for pot_index, back, amount, note in spends:
         doc.pot_entries.append(

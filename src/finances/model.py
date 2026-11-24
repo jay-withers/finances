@@ -81,9 +81,20 @@ class Pot(BaseModel):
     # from the spreadsheet's own 925 total, so it is excluded here too.
     counts_toward_payday: bool = True
     archived: bool = False
-    # A pot that pays a debt down rather than saving: its monthly top-up
-    # counts as debt in insights, not savings.
+    # What the pot's monthly top-up is for, in insights. Neither flag: savings.
+    # `debt` pays a debt down; `bills` puts money by for a known bill (a card
+    # cleared in full each month, lessons paid for termly). Two flags rather
+    # than one field so documents from before `bills` read unchanged; the
+    # form only ever sets one, and `purpose` reads debt first if both are set.
     debt: bool = False
+    bills: bool = False
+
+    @property
+    def purpose(self) -> str:
+        """One of "savings", "bills" or "debt"."""
+        if self.debt:
+            return "debt"
+        return "bills" if self.bills else "savings"
 
 
 class PotEntry(BaseModel):
