@@ -10,7 +10,8 @@
   <tbody>
   {% for pot in active_pots %}
     <tr>
-      <td><a href="/pots/{{ pot.id }}" style="text-decoration:none">{{ pot.name }}</a></td>
+      <td><a href="/pots/{{ pot.id }}" style="text-decoration:none">{{ pot.name }}</a>
+        {% if pot.debt %}<span class="muted">&middot; debt</span>{% endif %}</td>
       <td class="num muted">
         {% if pot.counts_toward_payday %}{{ pot.monthly_pence | money }}{% else %}&mdash;{% endif %}
       </td>
@@ -53,6 +54,10 @@
          the general savings pot works. #}
       <input type="number" id="monthly" name="monthly" step="0.01" inputmode="decimal"
              placeholder="0 for a pot that is not topped up monthly">
+    </div>
+    <div class="field">
+      <label><input type="checkbox" name="debt" value="1" style="width:auto">
+        A debt (its top-up counts as debt, not savings)</label>
     </div>
     <button type="submit">Add</button>
   </form>

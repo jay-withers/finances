@@ -26,48 +26,57 @@
    the spreadsheet. #}
 <form method="post" action="/monthly">
 
-<h2>Money in</h2>
-<table>
-  <tbody>
-  {% for line in doc.income %}
+{# One row per line. `side` moves a line between Money in and Money out on
+   save. `present_` marks the row as rendered: an unchecked checkbox submits
+   nothing, so without it "unticked" and "not on the page" look alike. #}
+{% macro row(line, side) %}
     <tr class="{{ '' if line.active else 'dim' }}">
       <td><input class="inline" type="text" name="name_{{ line.id }}" value="{{ line.name }}"></td>
-      <td class="num" style="width:32%">
+      <td class="shrink">
+        <select class="inline" name="side_{{ line.id }}" aria-label="{{ line.name }}: in or out">
+          <option value="income" {{ 'selected' if side == 'income' }}>In</option>
+          <option value="outgoing" {{ 'selected' if side == 'outgoing' }}>Out</option>
+        </select>
+      </td>
+      <td class="num" style="width:28%">
         <input class="inline" type="number" step="0.01" inputmode="decimal"
                name="amount_{{ line.id }}" value="{{ line.amount_pence | pounds }}">
       </td>
       <td class="shrink">
-        {# `present_` marks the row as rendered: an unchecked checkbox submits
-           nothing, so without it "unticked" and "not on the page" look alike. #}
         <input type="hidden" name="present_{{ line.id }}" value="1">
         <input type="checkbox" name="active_{{ line.id }}" value="1" title="active"
                style="width:auto" {{ 'checked' if line.active }}>
       </td>
+      <td class="shrink">
+        {% if side == 'outgoing' %}
+          <input type="checkbox" name="debt_{{ line.id }}" value="1" title="debt"
+                 aria-label="{{ line.name }} is a debt" style="width:auto" {{ 'checked' if line.debt }}>
+        {% endif %}
+      </td>
     </tr>
-  {% endfor %}
+{% endmacro %}
+
+<h2>Money in</h2>
+<table>
+  <thead><tr><th></th><th></th><th></th><th class="shrink muted">Active</th><th></th></tr></thead>
+  <tbody>
+  {% for line in doc.income %}{{ row(line, 'income') }}{% endfor %}
   </tbody>
-  <tfoot><tr><th>Total</th><th class="num">{{ summary.income | money }}</th><th></th></tr></tfoot>
+  <tfoot><tr><th>Total</th><th></th><th class="num">{{ summary.income | money }}</th><th></th><th></th></tr></tfoot>
 </table>
 
 <h2>Money out</h2>
 <table>
+  <thead><tr><th></th><th></th><th></th><th class="shrink muted">Active</th><th class="shrink muted">Debt</th></tr></thead>
   <tbody>
-  {% for line in doc.outgoings | sort(attribute="amount_pence", reverse=true) %}
-    <tr class="{{ '' if line.active else 'dim' }}">
-      <td><input class="inline" type="text" name="name_{{ line.id }}" value="{{ line.name }}"></td>
-      <td class="num" style="width:32%">
-        <input class="inline" type="number" step="0.01" inputmode="decimal"
-               name="amount_{{ line.id }}" value="{{ line.amount_pence | pounds }}">
-      </td>
-      <td class="shrink">
-        <input type="hidden" name="present_{{ line.id }}" value="1">
-        <input type="checkbox" name="active_{{ line.id }}" value="1" title="active"
-               style="width:auto" {{ 'checked' if line.active }}>
-      </td>
-    </tr>
-  {% endfor %}
+  {% for line in doc.outgoings | sort(attribute="amount_pence", reverse=true) %}{{ row(line, 'outgoing') }}{% endfor %}
   </tbody>
-  <tfoot><tr><th>Total</th><th class="num">{{ summary.outgoings | money }}</th><th></th></tr></tfoot>
+  <tfoot>
+    <tr><td colspan="5" class="muted">
+      Bills {{ summary.bills | money }} &middot; Debt {{ summary.debt_lines | money }}
+    </td></tr>
+    <tr><th>Total</th><th></th><th class="num">{{ summary.outgoings | money }}</th><th></th><th></th></tr>
+  </tfoot>
 </table>
 
 <button type="submit">Save changes</button>
@@ -82,6 +91,10 @@
         <option value="outgoing">Money out</option>
         <option value="income">Money in</option>
       </select>
+    </div>
+    <div class="field">
+      <label><input type="checkbox" name="debt" value="1" style="width:auto">
+        A debt (money out only)</label>
     </div>
     <div class="row">
       <div class="field">

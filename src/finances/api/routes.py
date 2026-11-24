@@ -633,9 +633,11 @@ def pot_page(request: Request, pot_id: str, month: str = "") -> Any:
 
 
 @router.post("/pots/add", include_in_schema=False)
-def pot_add(name: str = Form(...), monthly: str = Form(default="")) -> Any:
+def pot_add(
+    name: str = Form(...), monthly: str = Form(default=""), debt: str = Form(default="")
+) -> Any:
     def change(doc: Document) -> Document:
-        doc.pots.append(Pot(name=name.strip(), monthly_pence=_amount(monthly)))
+        doc.pots.append(Pot(name=name.strip(), monthly_pence=_amount(monthly), debt=bool(debt)))
         return doc
 
     _apply(change)
@@ -649,6 +651,7 @@ def pot_edit(
     monthly: str = Form(default=""),
     counts: str = Form(default=""),
     archived: str = Form(default=""),
+    debt: str = Form(default=""),
 ) -> Any:
     def change(doc: Document) -> Document:
         pot = doc.pot(pot_id)
@@ -657,6 +660,7 @@ def pot_edit(
             pot.monthly_pence = _amount(monthly)
             pot.counts_toward_payday = bool(counts)
             pot.archived = bool(archived)
+            pot.debt = bool(debt)
         return doc
 
     _apply(change)
@@ -733,14 +737,21 @@ class Share:
 
 
 def _income_split(summary: calc.Summary) -> list[Share]:
-    """Outgoings, savings and spare as shares of income. Empty when there is
-    no income, or when the plan spends more than comes in (the page says so
-    instead: a bar can't show more than its whole)."""
+    """Bills, savings, debt, the other payday transfers and spare as shares of
+    income. Empty when there is no income, or when the plan spends more than
+    comes in (the page says so instead: a bar can't show more than its whole).
+
+    The order is the colour order the palette was validated in, which puts
+    savings between bills' orange and debt's pink. With no savings the two
+    touch; they are just under the palette's separation floor, so the bar's
+    gaps and its legend are what tell them apart then."""
     if summary.income <= 0 or summary.spare < 0:
         return []
     parts = [
-        ("Outgoings", summary.outgoings, "c-out"),
-        ("Savings & spends", summary.savings_and_spends, "c-save"),
+        ("Bills", summary.bills, "c-out"),
+        ("Savings", summary.savings, "c-save"),
+        ("Debt", summary.debt, "c-debt"),
+        ("Other transfers", summary.transfers, "c-pots"),
         ("Spare", summary.spare, "c-spare"),
     ]
     return [
@@ -809,6 +820,8 @@ async def monthly_save(request: Request) -> Any:
     form = await request.form()
 
     def change(doc: Document) -> Document:
+        out_ids = {line.id for line in doc.outgoings}
+        moved: set[str] = set()
         for line in [*doc.income, *doc.outgoings]:
             raw = form.get(f"amount_{line.id}")
             if raw is not None:
@@ -820,6 +833,28 @@ async def monthly_save(request: Request) -> Any:
             # value. Only lines the form actually rendered are touched.
             if form.get(f"present_{line.id}") is not None:
                 line.active = form.get(f"active_{line.id}") is not None
+                # Only money-out rows render the debt box.
+                if line.id in out_ids:
+                    line.debt = form.get(f"debt_{line.id}") is not None
+            side = form.get(f"side_{line.id}")
+            if side is not None:
+                if str(side) not in ("income", "outgoing"):
+                    raise InvalidInput("A line is either money in or money out.")
+                if (str(side) == "outgoing") != (line.id in out_ids):
+                    moved.add(line.id)
+        for line in doc.income:
+            if line.id in moved:
+                # Income has no debt box, so a flag carried across would be
+                # invisible there and come back if the line moved back.
+                line.debt = False
+        if moved:
+            # Each moved line goes to the end of the other side.
+            doc.income, doc.outgoings = (
+                [x for x in doc.income if x.id not in moved]
+                + [x for x in doc.outgoings if x.id in moved],
+                [x for x in doc.outgoings if x.id not in moved]
+                + [x for x in doc.income if x.id in moved],
+            )
         return doc
 
     _apply(change)
@@ -828,13 +863,17 @@ async def monthly_save(request: Request) -> Any:
 
 @router.post("/monthly/add", include_in_schema=False)
 def monthly_add(
-    kind: str = Form(...), name: str = Form(...), amount: str = Form(default="")
+    kind: str = Form(...),
+    name: str = Form(...),
+    amount: str = Form(default=""),
+    debt: str = Form(default=""),
 ) -> Any:
     def change(doc: Document) -> Document:
         line = Line(name=name.strip(), amount_pence=_amount(amount))
         if kind == "income":
             doc.income.append(line)
         else:
+            line.debt = bool(debt)
             doc.outgoings.append(line)
         return doc
 

@@ -6,7 +6,7 @@
 
 <div class="figures">
   <div class="figure">
-    <div class="label">{{ pot.name }}</div>
+    <div class="label">{{ pot.name }}{% if pot.debt %} &middot; debt{% endif %}</div>
     <div class="value {{ 'over' if balance < 0 }}">{{ balance | money }}</div>
   </div>
   <div class="figure">
@@ -75,6 +75,10 @@
     <div class="field">
       <label><input type="checkbox" name="archived" value="1" style="width:auto"
              {{ 'checked' if pot.archived }}> Archived</label>
+    </div>
+    <div class="field">
+      <label><input type="checkbox" name="debt" value="1" style="width:auto"
+             {{ 'checked' if pot.debt }}> A debt (its top-up counts as debt, not savings)</label>
     </div>
     <button type="submit">Save</button>
   </form>

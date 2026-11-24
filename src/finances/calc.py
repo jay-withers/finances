@@ -227,6 +227,16 @@ class Summary:
     outgoings: int
     savings_and_spends: int
     spare: int
+    # The money-out lines ticked as debt: `outgoings` less this is `bills`.
+    debt_lines: int
+    # The same money again, by what it is for. `bills` and `debt` together
+    # are `outgoings` plus the debt pots' top-ups; `savings` is every other
+    # pot's top-up; `transfers` is what the payday transfers move besides the
+    # pots. All four sum to `outgoings + savings_and_spends`.
+    bills: int
+    debt: int
+    savings: int
+    transfers: int
 
 
 def transfer_amount(doc: Document, transfer_id: str) -> int | None:
@@ -251,19 +261,34 @@ def summary(doc: Document) -> Summary:
     twice and always produce a spare of zero.
     """
     income = sum(line.amount_pence for line in doc.income if line.active)
-    outgoings = sum(line.amount_pence for line in doc.outgoings if line.active)
+    active_out = [line for line in doc.outgoings if line.active]
+    outgoings = sum(line.amount_pence for line in active_out)
+    debt_lines = sum(line.amount_pence for line in active_out if line.debt)
+
+    # The pots reach the plan only through a transfer that tracks them, so
+    # their top-ups are split into savings and debt per such transfer.
+    pot_debt = sum(p.monthly_pence for p in payday_pots(doc) if p.debt)
+    pot_savings = pots_monthly_total(doc) - pot_debt
 
     committed = 0
+    tracking = 0
     for transfer in doc.transfers:
         amount = transfer_amount(doc, transfer.id)
         if amount is not None:
             committed += amount
+        if transfer.tracks_pots:
+            tracking += 1
 
     return Summary(
         income=income,
         outgoings=outgoings,
         savings_and_spends=committed,
         spare=income - outgoings - committed,
+        debt_lines=debt_lines,
+        bills=outgoings - debt_lines,
+        debt=debt_lines + pot_debt * tracking,
+        savings=pot_savings * tracking,
+        transfers=committed - (pot_debt + pot_savings) * tracking,
     )
 
 

@@ -8,7 +8,10 @@
      readers can tell apart, unlike the app's green and red. Text never wears
      them; a swatch beside the text carries the identity. */
   :root { --c-in: #4a90d9; --c-out: #c96a2c; --c-spare: #9a6fd6; --c-line: #7dd3a0;
-          --grid: #2c2c35; }
+          --c-debt: #d6578f; --c-pots: #4f9e4a; --grid: #2c2c35; }
+  /* The income bar runs bills, savings, debt, other transfers, spare:
+     validated in that order, with savings between bills' orange and debt's
+     pink. With no savings they touch, and the gaps and legend separate them. */
 
   .chart { position: relative; height: 180px; margin: 4px 0 0; }
   .chart svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
@@ -39,6 +42,8 @@
   .s-in, .c-save { background: var(--c-in); }
   .s-out, .c-out { background: var(--c-out); }
   .c-spare { background: var(--c-spare); }
+  .c-debt { background: var(--c-debt); }
+  .c-pots { background: var(--c-pots); }
 
   .split { display: flex; gap: 2px; height: 28px; margin: 8px 0; }
   .split div { border-radius: 4px; min-width: 2px; font-size: 12px; font-weight: 600;
@@ -191,6 +196,23 @@
 
 {# --- the monthly plan --------------------------------------------------------- #}
 <h2>Where the income goes</h2>
+<div class="figures">
+  <div class="figure">
+    <div class="label"><span class="swatch c-out"></span>Bills a month</div>
+    <div class="value">{{ summary.bills | money }}</div>
+  </div>
+  <div class="figure">
+    <div class="label"><span class="swatch c-save"></span>Savings a month</div>
+    <div class="value">{{ summary.savings | money }}</div>
+  </div>
+  <div class="figure">
+    <div class="label"><span class="swatch c-debt"></span>Debt a month</div>
+    <div class="value">{{ summary.debt | money }}</div>
+  </div>
+</div>
+<p class="muted" style="margin-top:0">Savings are the pots' monthly top-ups. Debt is
+  every Money out line on <a href="/monthly">In / Out</a> and every pot that is ticked
+  as a debt; bills are everything else in Money out.</p>
 <div class="card">
   <h3>{{ summary.income | money }} a month, as planned</h3>
   {% if split %}
