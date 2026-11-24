@@ -16,7 +16,8 @@ The home screen is a tile for each area, each saying whether it needs
 opening. **Today** lists what needs attention right now, and a scheduled job
 emails the same list every Sunday evening. **Insights** charts the last twelve months of
 savings: the balance, what went in and out, how each pot is heading, and where
-the monthly income goes.
+the monthly income goes: bills, savings and debt apart. A Money out line or a
+pot ticked as a debt counts as debt.
 
 ## Running it locally
 

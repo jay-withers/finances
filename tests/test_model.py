@@ -31,7 +31,15 @@ DAY = st.dates(min_value=date(1990, 1, 1), max_value=date(2100, 12, 31))
 RATE = st.none() | st.floats(allow_nan=False, allow_infinity=False)
 IDS = st.text(alphabet="0123456789abcdef", min_size=8, max_size=8)
 
-LINES = st.builds(Line, id=IDS, name=TEXT, amount_pence=PENCE, active=st.booleans(), note=TEXT)
+LINES = st.builds(
+    Line,
+    id=IDS,
+    name=TEXT,
+    amount_pence=PENCE,
+    active=st.booleans(),
+    note=TEXT,
+    debt=st.booleans(),
+)
 
 documents = st.builds(
     Document,
@@ -57,6 +65,7 @@ documents = st.builds(
             monthly_pence=PENCE,
             counts_toward_payday=st.booleans(),
             archived=st.booleans(),
+            debt=st.booleans(),
         ),
         max_size=4,
     ),
@@ -133,3 +142,14 @@ def test_saving_is_stable(doc: Document):
     """Load-then-save writes the same bytes, so blob versions only differ on real edits."""
     once = doc.to_json()
     assert Document.from_json(once).to_json() == once
+
+
+def test_a_document_from_before_debt_reads_as_no_debt():
+    """Lines and pots stored before `debt` existed must load unchanged."""
+    raw = (
+        '{"outgoings": [{"id": "abcd1234", "name": "Gym", "amount_pence": 2500}],'
+        ' "pots": [{"id": "abcd5678", "name": "Car"}]}'
+    )
+    doc = Document.from_json(raw)
+    assert doc.outgoings[0].debt is False
+    assert doc.pots[0].debt is False

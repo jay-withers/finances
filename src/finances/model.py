@@ -47,6 +47,10 @@ class Line(BaseModel):
     amount_pence: int = 0
     active: bool = True
     note: str = ""
+    # A money-out line paying off something owed (a loan, a credit card), so
+    # insights can show debt apart from spending. Income lines never read it.
+    # False by default, so a document from before it reads as it always did.
+    debt: bool = False
 
 
 class Transfer(BaseModel):
@@ -77,6 +81,9 @@ class Pot(BaseModel):
     # from the spreadsheet's own 925 total, so it is excluded here too.
     counts_toward_payday: bool = True
     archived: bool = False
+    # A pot that pays a debt down rather than saving: its monthly top-up
+    # counts as debt in insights, not savings.
+    debt: bool = False
 
 
 class PotEntry(BaseModel):

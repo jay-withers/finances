@@ -436,9 +436,33 @@ def test_insights_shows_the_year_the_pots_and_the_split(client, stored, november
     for pot in stored.pots:
         assert f'href="/pots/{pot.id}"' in html
     assert "overdrawn" in html
-    # Income 5000: outgoings 1000, savings and spends 1600, spare 2400.
-    assert "Outgoings £1,000" in html and "20%" in html
+    # Income 5000: bills 1000, savings 500 (the pots), other transfers 1100, spare 2400.
+    assert "Bills £1,000" in html and "20%" in html
+    assert "Savings £500" in html and "Other transfers £1,100" in html
     assert "Spare £2,400" in html and "48%" in html
+    assert "Debt £" not in html  # a part with nothing in it isn't drawn
+
+
+def test_insights_shows_debt_savings_and_spends_apart(client, stored, november):
+    mortgage = next(line for line in stored.outgoings if line.name == "Mortgage")
+    car = pot_named(stored, "Car")
+    client.post(
+        "/monthly",
+        data={
+            f"present_{mortgage.id}": "1",
+            f"active_{mortgage.id}": "1",
+            f"debt_{mortgage.id}": "1",
+        },
+    )
+    client.post(
+        f"/pots/{car.id}/edit", data={"name": "Car", "monthly": "50", "counts": "1", "debt": "1"}
+    )
+    html = client.get("/insights").text
+    figures = html[html.index("Bills a month") :]
+    assert "£100" in figures[:200]  # Bills
+    assert "£450" in figures[figures.index("Savings a month") :][:200]  # Holidays
+    assert "£950" in figures[figures.index("Debt a month") :][:200]  # Mortgage and Car
+    assert "Bills £100" in html and "Savings £450" in html and "Debt £950" in html
 
 
 def test_the_average_month_leaves_out_the_month_in_progress(client, stored, november):
@@ -517,6 +541,103 @@ def test_a_row_not_on_the_form_keeps_its_active_flag(client, stored):
     bills = next(line for line in stored.outgoings if line.name == "Bills")
     client.post("/monthly", data={f"amount_{bills.id}": "100"})
     assert next(line for line in reload().outgoings if line.id == bills.id).active is True
+
+
+def test_ticking_debt_marks_a_money_out_line(client, stored):
+    mortgage = next(line for line in stored.outgoings if line.name == "Mortgage")
+    rendered = {f"present_{mortgage.id}": "1", f"active_{mortgage.id}": "1"}
+    client.post("/monthly", data={**rendered, f"debt_{mortgage.id}": "1"})
+    assert next(x for x in reload().outgoings if x.id == mortgage.id).debt is True
+    # Unticked, on a rendered row, clears it.
+    client.post("/monthly", data=rendered)
+    assert next(x for x in reload().outgoings if x.id == mortgage.id).debt is False
+
+
+def test_a_row_not_on_the_form_keeps_its_debt_flag(client, stored):
+    mortgage = next(line for line in stored.outgoings if line.name == "Mortgage")
+    client.post(
+        "/monthly",
+        data={
+            f"present_{mortgage.id}": "1",
+            f"debt_{mortgage.id}": "1",
+            f"active_{mortgage.id}": "1",
+        },
+    )
+    client.post("/monthly", data={f"amount_{mortgage.id}": "900"})
+    assert next(x for x in reload().outgoings if x.id == mortgage.id).debt is True
+
+
+def test_the_monthly_page_has_a_debt_box_on_money_out_only(client, stored):
+    mortgage = next(line for line in stored.outgoings if line.name == "Mortgage")
+    salary = next(line for line in stored.income if line.name == "Salary")
+    client.post(
+        "/monthly",
+        data={
+            f"present_{mortgage.id}": "1",
+            f"active_{mortgage.id}": "1",
+            f"debt_{mortgage.id}": "1",
+        },
+    )
+    html = client.get("/monthly").text
+    box = html[html.index(f'name="debt_{mortgage.id}"') :][:200]
+    assert "checked" in box
+    assert f'name="debt_{salary.id}"' not in html
+    assert "Debt £900" in html  # the breakdown under Money out
+
+
+def test_switching_a_lines_side_moves_it(client, stored):
+    bills = next(line for line in stored.outgoings if line.name == "Bills")
+    salary = next(line for line in stored.income if line.name == "Salary")
+    client.post(
+        "/monthly",
+        data={f"side_{bills.id}": "income", f"side_{salary.id}": "outgoing"},
+    )
+    document = reload()
+    assert document.income[-1] == bills
+    assert document.outgoings[-1] == salary
+    assert bills.id not in [x.id for x in document.outgoings]
+    assert salary.id not in [x.id for x in document.income]
+
+
+def test_a_debt_moved_to_money_in_loses_its_flag(client, stored):
+    """Income rows have no debt box, so the flag can't be seen or cleared there."""
+    mortgage = next(line for line in stored.outgoings if line.name == "Mortgage")
+    rendered = {f"present_{mortgage.id}": "1", f"active_{mortgage.id}": "1"}
+    client.post("/monthly", data={**rendered, f"debt_{mortgage.id}": "1"})
+    client.post("/monthly", data={**rendered, f"side_{mortgage.id}": "income"})
+    client.post("/monthly", data={**rendered, f"side_{mortgage.id}": "outgoing"})
+    assert next(x for x in reload().outgoings if x.id == mortgage.id).debt is False
+
+
+def test_a_line_kept_on_its_side_stays_where_it_is(client, stored):
+    bills = next(line for line in stored.outgoings if line.name == "Bills")
+    client.post("/monthly", data={f"side_{bills.id}": "outgoing"})
+    assert reload() == stored
+
+
+def test_an_unknown_side_is_refused(client, stored):
+    bills = next(line for line in stored.outgoings if line.name == "Bills")
+    response = client.post("/monthly", data={f"side_{bills.id}": "sideways"})
+    assert response.status_code == 422
+    assert response.json() == {"detail": "A line is either money in or money out."}
+    assert reload() == stored
+
+
+def test_add_an_outgoing_debt(client):
+    client.post(
+        "/monthly/add",
+        data={"kind": "outgoing", "name": "Loan", "amount": "150", "debt": "1"},
+    )
+    assert next(x for x in reload().outgoings if x.name == "Loan").debt is True
+
+
+def test_add_and_edit_a_debt_pot(client, stored):
+    client.post("/pots/add", data={"name": "Car loan", "monthly": "80", "debt": "1"})
+    pot = pot_named(reload(), "Car loan")
+    assert pot.debt is True
+    assert "debt" in client.get(f"/pots/{pot.id}").text
+    client.post(f"/pots/{pot.id}/edit", data={"name": "Car loan", "monthly": "80", "counts": "1"})
+    assert pot_named(reload(), "Car loan").debt is False
 
 
 def test_the_pot_tracking_transfer_cannot_be_overwritten(client, stored):

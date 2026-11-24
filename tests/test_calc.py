@@ -246,6 +246,29 @@ def test_summary_excludes_inactive_lines(doc: Document):
     assert totals.outgoings == 100_000  # the 5000 "Old thing" line is inactive
 
 
+def test_summary_splits_spends_savings_and_debt(doc: Document):
+    """Debt is the ticked lines plus the ticked pots' top-ups; savings the
+    other pots' top-ups; an inactive line counts nowhere."""
+    mortgage, _bills, old = doc.outgoings
+    mortgage.debt = True
+    old.debt = True  # inactive
+    car = next(p for p in doc.pots if p.name == "Car")
+    car.debt = True
+    totals = calc.summary(doc)
+    assert totals.bills == 10_000
+    assert totals.debt == 90_000 + 5_000
+    assert totals.savings == 45_000  # Holidays; the general pot isn't topped up
+    assert totals.transfers == 110_000  # the bills account
+    assert totals.outgoings == 100_000
+    assert totals.debt_lines == 90_000
+
+
+def test_without_a_pot_tracking_transfer_the_pots_are_not_in_the_plan(doc: Document):
+    doc.transfers = [t for t in doc.transfers if not t.tracks_pots]
+    totals = calc.summary(doc)
+    assert (totals.savings, totals.debt, totals.transfers) == (0, 0, 110_000)
+
+
 def test_summary_spare_ignores_the_remainder_transfer(doc: Document):
     """Counting the remainder would subtract the same money twice.
 
@@ -684,6 +707,7 @@ def ledgers(draw: st.DrawFn) -> Document:
             monthly_pence=draw(st.integers(min_value=0, max_value=10**7)),
             counts_toward_payday=draw(st.booleans()),
             archived=draw(st.booleans()),
+            debt=draw(st.booleans()),
         )
         for pot_id in POT_IDS[: draw(st.integers(min_value=0, max_value=len(POT_IDS)))]
     ]
@@ -763,7 +787,9 @@ def test_spare_is_always_what_is_left(
 ):
     """income - outgoings - committed == spare, and the pots transfer tracks the pots."""
     doc.income = [Line(name="in", amount_pence=a, active=data.draw(st.booleans())) for a in incomes]
-    doc.outgoings = [Line(name="out", amount_pence=a) for a in outgoings]
+    doc.outgoings = [
+        Line(name="out", amount_pence=a, debt=data.draw(st.booleans())) for a in outgoings
+    ]
     fixed = data.draw(AMOUNT)
     doc.transfers = [
         Transfer(label="pots", amount_pence=data.draw(AMOUNT), tracks_pots=True),
@@ -779,6 +805,11 @@ def test_spare_is_always_what_is_left(
     payday = sum(p.monthly_pence for p in doc.pots if p.counts_toward_payday and not p.archived)
     assert result.savings_and_spends == payday + fixed
     assert result.spare == sum(incomes_active(doc)) - sum(outgoings) - payday - fixed
+    # Split by purpose, the same money: every penny lands in exactly one part.
+    parts = result.bills + result.debt + result.savings + result.transfers
+    assert parts == result.outgoings + result.savings_and_spends
+    assert result.bills == sum(x.amount_pence for x in doc.outgoings if not x.debt)
+    assert result.transfers == fixed
 
 
 # Both found by this test: a 7x jump in a day overflowed, and a negative
