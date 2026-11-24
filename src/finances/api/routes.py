@@ -734,6 +734,7 @@ class Share:
     amount_pence: int
     percent: int  # of income, whole percent, for the bar's width and label
     css: str  # the part's colour class
+    part: str  # its breakdown page under /insights/, or "" for spare
 
 
 def _income_split(summary: calc.Summary) -> list[Share]:
@@ -748,15 +749,15 @@ def _income_split(summary: calc.Summary) -> list[Share]:
     if summary.income <= 0 or summary.spare < 0:
         return []
     parts = [
-        ("Bills", summary.bills, "c-out"),
-        ("Savings", summary.savings, "c-save"),
-        ("Debt", summary.debt, "c-debt"),
-        ("Other transfers", summary.transfers, "c-pots"),
-        ("Spare", summary.spare, "c-spare"),
+        ("Bills", summary.bills, "c-out", "bills"),
+        ("Savings", summary.savings, "c-save", "savings"),
+        ("Debt", summary.debt, "c-debt", "debt"),
+        ("Other transfers", summary.transfers, "c-pots", "transfers"),
+        ("Spare", summary.spare, "c-spare", ""),
     ]
     return [
-        Share(label, amount, (amount * 100 + summary.income // 2) // summary.income, css)
-        for label, amount, css in parts
+        Share(label, amount, (amount * 100 + summary.income // 2) // summary.income, css, part)
+        for label, amount, css, part in parts
         if amount > 0
     ]
 
@@ -792,6 +793,35 @@ def insights_page(request: Request) -> Any:
     )
 
 
+_PART_TITLES = {
+    "bills": "Bills",
+    "savings": "Savings",
+    "debt": "Debt",
+    "transfers": "Other transfers",
+}
+
+
+@router.get("/insights/{part}", response_class=HTMLResponse, include_in_schema=False)
+def insights_part_page(request: Request, part: str) -> Any:
+    """What makes up one part of "where the income goes", read only."""
+    if part not in calc.PLAN_PARTS:
+        return _back("/insights")
+    doc, _etag = store.load()
+    items = calc.plan_breakdown(doc, part)
+    return templates.TemplateResponse(
+        request,
+        "breakdown.html",
+        {
+            "doc": doc,
+            "today": _today(),
+            "title": _PART_TITLES[part],
+            "part": part,
+            "items": items,
+            "total": sum(i.amount_pence for i in items),
+        },
+    )
+
+
 # --- the monthly picture ------------------------------------------------------
 
 
@@ -809,52 +839,65 @@ def monthly_page(request: Request) -> Any:
     )
 
 
-@router.post("/monthly", include_in_schema=False)
-async def monthly_save(request: Request) -> Any:
-    """Save every amount on the page in one write.
+def _find_line(doc: Document, line_id: str) -> tuple[Line, str] | None:
+    """A line and the side it is on, "income" or "outgoing"."""
+    for side, lines in (("income", doc.income), ("outgoing", doc.outgoings)):
+        for line in lines:
+            if line.id == line_id:
+                return line, side
+    return None
 
-    A field per line rather than a page per line: changing a bill is usually
-    done in a batch when the statement arrives, and eleven round trips to edit
-    eleven amounts is what sends someone back to the spreadsheet.
-    """
-    form = await request.form()
+
+@router.get("/monthly/{line_id}", response_class=HTMLResponse, include_in_schema=False)
+def line_page(request: Request, line_id: str) -> Any:
+    """One line, open for editing: the list links here, as the pots list does."""
+    doc, _etag = store.load()
+    found = _find_line(doc, line_id)
+    if found is None:
+        return _back("/monthly")
+    line, side = found
+    return templates.TemplateResponse(
+        request, "line.html", {"doc": doc, "today": _today(), "line": line, "side": side}
+    )
+
+
+@router.post("/monthly/{line_id}/edit", include_in_schema=False)
+def line_edit(
+    line_id: str,
+    name: str = Form(...),
+    amount: str = Form(...),
+    side: str = Form(...),
+    was: str = Form(default=""),
+    active: str = Form(default=""),
+    debt: str = Form(default=""),
+) -> Any:
+    """Save a line. `was` is the side the page was rendered with: the line
+    moves only when the select was changed from it, so a page opened before
+    someone else moved the line doesn't move it back."""
+    if side not in ("income", "outgoing"):
+        raise InvalidInput("A line is either money in or money out.")
 
     def change(doc: Document) -> Document:
-        out_ids = {line.id for line in doc.outgoings}
-        moved: set[str] = set()
-        for line in [*doc.income, *doc.outgoings]:
-            raw = form.get(f"amount_{line.id}")
-            if raw is not None:
-                line.amount_pence = _amount(str(raw))
-            name = form.get(f"name_{line.id}")
-            if name is not None and str(name).strip():
-                line.name = str(name).strip()
-            # An unchecked checkbox submits nothing at all, so presence is the
-            # value. Only lines the form actually rendered are touched.
-            if form.get(f"present_{line.id}") is not None:
-                line.active = form.get(f"active_{line.id}") is not None
-                # Only money-out rows render the debt box.
-                if line.id in out_ids:
-                    line.debt = form.get(f"debt_{line.id}") is not None
-            side = form.get(f"side_{line.id}")
-            if side is not None:
-                if str(side) not in ("income", "outgoing"):
-                    raise InvalidInput("A line is either money in or money out.")
-                if (str(side) == "outgoing") != (line.id in out_ids):
-                    moved.add(line.id)
-        for line in doc.income:
-            if line.id in moved:
-                # Income has no debt box, so a flag carried across would be
-                # invisible there and come back if the line moved back.
-                line.debt = False
-        if moved:
-            # Each moved line goes to the end of the other side.
-            doc.income, doc.outgoings = (
-                [x for x in doc.income if x.id not in moved]
-                + [x for x in doc.outgoings if x.id in moved],
-                [x for x in doc.outgoings if x.id not in moved]
-                + [x for x in doc.income if x.id in moved],
-            )
+        found = _find_line(doc, line_id)
+        if found is None:
+            raise InvalidInput("That line no longer exists.", status.HTTP_404_NOT_FOUND)
+        line, current = found
+        if name.strip():
+            line.name = name.strip()
+        line.amount_pence = _amount(amount)
+        line.active = bool(active)
+        # Only money out can be a debt; a line moved to income loses the
+        # flag rather than carrying one it can't show.
+        moving = side != (was or current)
+        target = side if moving else current
+        line.debt = target == "outgoing" and bool(debt)
+        if target != current:
+            if current == "income":
+                doc.income = [x for x in doc.income if x.id != line_id]
+                doc.outgoings.append(line)
+            else:
+                doc.outgoings = [x for x in doc.outgoings if x.id != line_id]
+                doc.income.append(line)
         return doc
 
     _apply(change)

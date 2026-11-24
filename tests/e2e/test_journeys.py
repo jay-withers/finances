@@ -14,7 +14,17 @@ from .conftest import PASSCODE
 # Every screen in the nav, with the seeded document behind it. A page that
 # renders but trips the CSP, or throws in its script, fails the autouse
 # console check.
-PAGES = ["/", "/today", "/payday", "/pots", "/monthly", "/renewals", "/wealth", "/insights"]
+PAGES = [
+    "/",
+    "/today",
+    "/payday",
+    "/pots",
+    "/monthly",
+    "/renewals",
+    "/wealth",
+    "/insights",
+    "/insights/debt",
+]
 
 
 def test_a_page_without_a_session_goes_to_login(page: Page) -> None:
@@ -59,6 +69,17 @@ def test_a_pot_opens_from_the_pots_list(signed_in: Page) -> None:
     link.click()
     page.wait_for_load_state("load")
     assert urlparse(page.url).path == href
+
+
+def test_a_line_opens_in_edit_mode_from_in_out(signed_in: Page) -> None:
+    page = signed_in
+    page.goto("/monthly")
+    link = page.locator('a[href^="/monthly/"]').first
+    href = link.get_attribute("href")
+    link.click()
+    page.wait_for_load_state("load")
+    assert urlparse(page.url).path == href
+    assert page.locator(f'form[action="{href}/edit"]').is_visible()
 
 
 def test_a_recorded_payday_shows_as_already_run(signed_in: Page) -> None:

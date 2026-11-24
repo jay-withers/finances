@@ -810,6 +810,10 @@ def test_spare_is_always_what_is_left(
     assert parts == result.outgoings + result.savings_and_spends
     assert result.bills == sum(x.amount_pence for x in doc.outgoings if not x.debt)
     assert result.transfers == fixed
+    # Each breakdown adds up to its figure on the insights page.
+    for part in calc.PLAN_PARTS:
+        listed = sum(i.amount_pence for i in calc.plan_breakdown(doc, part))
+        assert listed == getattr(result, part), part
 
 
 # Both found by this test: a 7x jump in a day overflowed, and a negative
@@ -865,3 +869,8 @@ def test_a_retirement_estimate_never_compounds_past_the_cap(
     assert estimate is not None
     assert round(current * (1 - cap) ** years_ahead) <= estimate
     assert estimate <= round(current * (1 + cap) ** years_ahead)
+
+
+def test_plan_breakdown_refuses_an_unknown_part(doc: Document):
+    with pytest.raises(ValueError, match="no such part"):
+        calc.plan_breakdown(doc, "lottery")

@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}{{ line.name }} &middot; finances{% endblock %}
+{% block subtitle %}<a href="/monthly">&larr; in / out</a>{% endblock %}
+{% block body %}
+
+{# Opens in edit mode: the only reason to open a line is to change it. #}
+<form method="post" action="/monthly/{{ line.id }}/edit" class="card">
+  <input type="hidden" name="was" value="{{ side }}">
+  <div class="field">
+    <label for="name">Name</label>
+    <input type="text" id="name" name="name" value="{{ line.name }}" required>
+  </div>
+  <div class="row">
+    <div class="field">
+      <label for="amount">Amount a month</label>
+      <input type="number" id="amount" name="amount" step="0.01" inputmode="decimal"
+             value="{{ line.amount_pence | pounds }}">
+    </div>
+    <div class="field">
+      <label for="side">Which side</label>
+      <select id="side" name="side">
+        <option value="income" {{ 'selected' if side == 'income' }}>Money in</option>
+        <option value="outgoing" {{ 'selected' if side == 'outgoing' }}>Money out</option>
+      </select>
+    </div>
+  </div>
+  <div class="field">
+    <label><input type="checkbox" name="active" value="1" style="width:auto"
+           {{ 'checked' if line.active }}> Active (counts toward the totals)</label>
+  </div>
+  <div class="field">
+    <label><input type="checkbox" name="debt" value="1" style="width:auto"
+           {{ 'checked' if line.debt }}> A debt (money out only)</label>
+  </div>
+  <button type="submit">Save</button>
+</form>
+
+{# Behind a toggle, so a slip aimed at Save can't delete the line. #}
+<details>
+  <summary>Delete this line</summary>
+  <form method="post" action="/monthly/{{ line.id }}/delete" class="inline-form">
+    <button class="tiny" type="submit">Yes, delete {{ line.name }}</button>
+  </form>
+</details>
+{% endblock %}
