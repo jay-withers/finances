@@ -1,0 +1,12 @@
+{# What a money-out line or a pot is for, in insights. #}
+{% macro purpose_field(current, id="purpose") %}
+  <div class="field">
+    <label for="{{ id }}">What it's for</label>
+    <select id="{{ id }}" name="purpose">
+      <option value="bills" {{ 'selected' if current == 'bills' }}>Bills (a known bill, like a card cleared monthly)</option>
+      <option value="savings" {{ 'selected' if current == 'savings' }}>Savings</option>
+      <option value="spends" {{ 'selected' if current == 'spends' }}>Spends (money to spend)</option>
+      <option value="debt" {{ 'selected' if current == 'debt' }}>Debt (paying something off)</option>
+    </select>
+  </div>
+{% endmacro %}

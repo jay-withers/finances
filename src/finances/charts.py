@@ -32,9 +32,6 @@ RIGHT = 4
 TOP = 10  # half a tick label, which is centred on its gridline
 BOTTOM = 4
 
-# Columns are capped rather than filling their slot, with air either side.
-MAX_BAR = 24
-
 
 def compact(pence: int) -> str:
     """An axis label: `£0`, `£750`, `£1.5k`, `£12k`, `£1.2m`. Whole pounds only."""
@@ -112,25 +109,13 @@ class Point:
 
 
 @dataclass(frozen=True)
-class Bar:
-    x: float
-    y: float
-    width: float
-    height: float
-    # A path, so the data end is rounded and the baseline end square.
-    path: str
-
-
-@dataclass(frozen=True)
 class Chart:
     ticks: list[Tick]
     slots: list[Slot]
     baseline: float  # y of £0
-    line: str = ""  # an SVG path, for the balance chart
+    line: str = ""  # an SVG path
     area: str = ""  # the wash under the line, closed to the baseline
     points: tuple[Point, ...] = ()
-    paid_in: tuple[Bar, ...] = ()
-    paid_out: tuple[Bar, ...] = ()
 
 
 def _scale(ticks: list[int]) -> Callable[[int], float]:
@@ -163,26 +148,6 @@ def _slots(flows: list[MonthFlow], tips: list[str]) -> list[Slot]:
     ]
 
 
-def _column(x: float, top: float, bottom: float, width: float, up: bool) -> Bar:
-    """A column from the baseline, its far end rounded (4 units) and its
-    baseline end square."""
-    height = bottom - top
-    left = x - width / 2
-    r = min(4.0, width / 2, height)
-    if height <= 0:
-        return Bar(left, top, width, 0, "")
-    right = left + width
-    # `base` is the square end on the baseline, `end` the rounded data end,
-    # and `inward` the direction from the data end back toward the baseline.
-    base, end, inward = (bottom, top, r) if up else (top, bottom, -r)
-    path = (
-        f"M{left:.2f},{base:.2f} V{end + inward:.2f} "
-        f"Q{left:.2f},{end:.2f} {left + r:.2f},{end:.2f} H{right - r:.2f} "
-        f"Q{right:.2f},{end:.2f} {right:.2f},{end + inward:.2f} V{base:.2f} Z"
-    )
-    return Bar(round(left, 2), round(top, 2), round(width, 2), round(height, 2), path)
-
-
 def balance_chart(flows: list[MonthFlow], fmt: Format = format_money) -> Chart:
     """Every pot's balance at each month's end, as one line."""
     values = [f.closing for f in flows]
@@ -202,37 +167,4 @@ def balance_chart(flows: list[MonthFlow], fmt: Format = format_money) -> Chart:
         line=line,
         area=area,
         points=points,
-    )
-
-
-def flow_chart(flows: list[MonthFlow], fmt: Format = format_money) -> Chart:
-    """Money in above the line and money out below it, one pair per month.
-
-    One axis, one scale: out is drawn as a negative so the two are compared on
-    the same ruler, not two charts that look alike but measure differently.
-    """
-    ticks = nice_ticks(
-        min((f.paid_out for f in flows), default=0), max((f.paid_in for f in flows), default=0)
-    )
-    y = _scale(ticks)
-    zero = y(0)
-    tips = [
-        f"{f.month:%B %Y}: in {fmt(f.paid_in)}, out {fmt(-f.paid_out)}, net {fmt(f.net)}"
-        for f in flows
-    ]
-    slots = _slots(flows, tips)
-    width = min(MAX_BAR, slots[0].width * 0.6) if slots else MAX_BAR
-    return Chart(
-        ticks=[Tick(y(t), compact(t)) for t in ticks],
-        slots=slots,
-        baseline=zero,
-        # A 2-unit gap at the baseline keeps the pair apart where they meet.
-        paid_in=tuple(
-            _column(s.x, y(f.paid_in), zero - 1, width, up=True)
-            for s, f in zip(slots, flows, strict=True)
-        ),
-        paid_out=tuple(
-            _column(s.x, zero + 1, y(f.paid_out), width, up=False)
-            for s, f in zip(slots, flows, strict=True)
-        ),
     )

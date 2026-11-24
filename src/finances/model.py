@@ -25,6 +25,11 @@ from pydantic import BaseModel, Field
 
 EntryKind = Literal["payday", "deposit", "spend", "opening", "adjustment"]
 
+# What a money-out line or a pot's top-up is for, in insights. One list for
+# both, so a line and a pot mean the same thing by "spends".
+Purpose = Literal["bills", "savings", "spends", "debt"]
+PURPOSES: tuple[Purpose, ...] = ("bills", "savings", "spends", "debt")
+
 # The monthly transfer whose amount is "whatever is left" rather than a figure.
 # Modelled as None rather than 0 so that a genuine £0 transfer stays possible.
 REMAINDER = None
@@ -47,10 +52,23 @@ class Line(BaseModel):
     amount_pence: int = 0
     active: bool = True
     note: str = ""
-    # A money-out line paying off something owed (a loan, a credit card), so
-    # insights can show debt apart from spending. Income lines never read it.
-    # False by default, so a document from before it reads as it always did.
+    # What a money-out line is for, in insights. Income lines never read it.
+    # None on a line saved before it existed: `debt` then decides, as it did.
+    # `debt` is still written, kept in step by `set_purpose`, so a rollback to
+    # a release from before `category` still reads a debt as a debt (and the
+    # rest as bills, which is all that release knew).
+    category: Purpose | None = None
     debt: bool = False
+
+    @property
+    def purpose(self) -> Purpose:
+        if self.category is not None:
+            return self.category
+        return "debt" if self.debt else "bills"
+
+    def set_purpose(self, purpose: Purpose) -> None:
+        self.category = purpose
+        self.debt = purpose == "debt"
 
 
 class Transfer(BaseModel):
@@ -81,20 +99,29 @@ class Pot(BaseModel):
     # from the spreadsheet's own 925 total, so it is excluded here too.
     counts_toward_payday: bool = True
     archived: bool = False
-    # What the pot's monthly top-up is for, in insights. Neither flag: savings.
-    # `debt` pays a debt down; `bills` puts money by for a known bill (a card
-    # cleared in full each month, lessons paid for termly). Two flags rather
-    # than one field so documents from before `bills` read unchanged; the
-    # form only ever sets one, and `purpose` reads debt first if both are set.
+    # What the pot's monthly top-up is for, in insights. `bills` puts money by
+    # for a known bill (a card cleared in full each month, lessons paid for
+    # termly), `debt` pays a debt down, `spends` is money to spend.
+    # None on a pot saved before it existed: the two flags then decide, as
+    # they did (debt first, neither is savings). The flags are still written,
+    # kept in step by `set_purpose`, so a rollback to a release from before
+    # `category` reads bills and debt as before (and spends as savings).
+    category: Purpose | None = None
     debt: bool = False
     bills: bool = False
 
     @property
-    def purpose(self) -> str:
-        """One of "savings", "bills" or "debt"."""
+    def purpose(self) -> Purpose:
+        if self.category is not None:
+            return self.category
         if self.debt:
             return "debt"
         return "bills" if self.bills else "savings"
+
+    def set_purpose(self, purpose: Purpose) -> None:
+        self.category = purpose
+        self.debt = purpose == "debt"
+        self.bills = purpose == "bills"
 
 
 class PotEntry(BaseModel):

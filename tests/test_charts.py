@@ -72,17 +72,6 @@ def test_the_balance_line_runs_through_every_month_top_to_bottom():
     assert chart.slots[0].tip == "January 2026: £1,000"
 
 
-def test_in_rises_from_the_baseline_and_out_falls_from_it():
-    chart = charts.flow_chart(flows((30_000, -10_000, 0), (0, 0, 0)))
-    up, down = chart.paid_in[0], chart.paid_out[0]
-    assert up.y + up.height < chart.baseline < down.y
-    assert up.height > down.height  # £300 against £100 on the same scale
-    assert up.width <= charts.MAX_BAR
-    # A month with nothing draws nothing, rather than a sliver.
-    assert chart.paid_in[1].path == "" and chart.paid_out[1].path == ""
-    assert chart.slots[0].tip == "January 2026: in £300, out £100, net £200"
-
-
 def test_every_other_month_is_labelled_ending_with_the_newest():
     chart = charts.balance_chart(flows(*[(0, 0, 0)] * 12))
     shown = [s.label for s in chart.slots if s.show_label]

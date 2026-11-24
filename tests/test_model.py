@@ -12,6 +12,7 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 from finances.model import (
+    PURPOSES,
     Document,
     Line,
     PaydayRun,
@@ -38,6 +39,7 @@ LINES = st.builds(
     amount_pence=PENCE,
     active=st.booleans(),
     note=TEXT,
+    category=st.none() | st.sampled_from(PURPOSES),
     debt=st.booleans(),
 )
 
@@ -65,6 +67,7 @@ documents = st.builds(
             monthly_pence=PENCE,
             counts_toward_payday=st.booleans(),
             archived=st.booleans(),
+            category=st.none() | st.sampled_from(PURPOSES),
             debt=st.booleans(),
             bills=st.booleans(),
         ),

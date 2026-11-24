@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_purpose.html" import purpose_field %}
 {% block title %}{{ line.name }} &middot; finances{% endblock %}
 {% block subtitle %}<a href="/monthly">&larr; in / out</a>{% endblock %}
 {% block body %}
@@ -28,10 +29,8 @@
     <label><input type="checkbox" name="active" value="1" style="width:auto"
            {{ 'checked' if line.active }}> Active (counts toward the totals)</label>
   </div>
-  <div class="field">
-    <label><input type="checkbox" name="debt" value="1" style="width:auto"
-           {{ 'checked' if line.debt }}> A debt (money out only)</label>
-  </div>
+  {# Money out only: a money-in line ignores it. #}
+  {{ purpose_field(line.purpose if side == 'outgoing' else 'bills') }}
   <button type="submit">Save</button>
 </form>
 

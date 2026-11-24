@@ -28,11 +28,13 @@ from fastapi.templating import Jinja2Templates
 
 from .. import calc, charts, store
 from ..model import (
+    PURPOSES,
     Document,
     Line,
     PaydayRun,
     Pot,
     PotEntry,
+    Purpose,
     Renewal,
     Transfer,
     WealthAccount,
@@ -80,11 +82,23 @@ def _amount(raw: str) -> int:
         raise InvalidInput("That amount isn't a number.") from exc
 
 
-def _purpose(raw: str) -> tuple[bool, bool]:
-    """A pot's purpose from its form, as the (debt, bills) flags it stores."""
-    if raw not in ("savings", "bills", "debt"):
-        raise InvalidInput("A pot is for savings, bills or a debt.")
-    return raw == "debt", raw == "bills"
+def _purpose(raw: str) -> Purpose:
+    """A money-out line's or a pot's purpose, from its form."""
+    for purpose in PURPOSES:
+        if raw == purpose:
+            return purpose
+    raise InvalidInput("Pick bills, savings, spends or debt.")
+
+
+def _line_purpose(purpose: str, debt: str, stored: Purpose | None) -> Purpose | None:
+    """A money-out line's purpose from its form. A page loaded before the
+    select existed posts the old debt tick box instead: ticked is a debt,
+    unticked on a debt is bills, and unticked on anything else keeps it."""
+    if purpose:
+        return _purpose(purpose)
+    if debt:
+        return "debt"
+    return "bills" if stored == "debt" else stored
 
 
 def _today() -> date:
@@ -643,12 +657,12 @@ def pot_page(request: Request, pot_id: str, month: str = "") -> Any:
 def pot_add(
     name: str = Form(...), monthly: str = Form(default=""), purpose: str = Form(default="savings")
 ) -> Any:
-    debt, bills = _purpose(purpose)
+    chosen = _purpose(purpose)
 
     def change(doc: Document) -> Document:
-        doc.pots.append(
-            Pot(name=name.strip(), monthly_pence=_amount(monthly), debt=debt, bills=bills)
-        )
+        pot = Pot(name=name.strip(), monthly_pence=_amount(monthly))
+        pot.set_purpose(chosen)
+        doc.pots.append(pot)
         return doc
 
     _apply(change)
@@ -665,7 +679,7 @@ def pot_edit(
     purpose: str = Form(default=""),
 ) -> Any:
     # Left out by a page loaded before the field existed: keep what is stored.
-    flags = _purpose(purpose) if purpose else None
+    chosen = _purpose(purpose) if purpose else None
 
     def change(doc: Document) -> Document:
         pot = doc.pot(pot_id)
@@ -674,8 +688,8 @@ def pot_edit(
             pot.monthly_pence = _amount(monthly)
             pot.counts_toward_payday = bool(counts)
             pot.archived = bool(archived)
-            if flags is not None:
-                pot.debt, pot.bills = flags
+            if chosen is not None:
+                pot.set_purpose(chosen)
         return doc
 
     _apply(change)
@@ -753,22 +767,21 @@ class Share:
 
 
 def _income_split(summary: calc.Summary) -> list[Share]:
-    """Bills, savings, debt, the other payday transfers and spare as shares of
-    income. Empty when there is no income, or when the plan spends more than
-    comes in (the page says so instead: a bar can't show more than its whole).
+    """Bills, savings, spends and debt as shares of income: spends takes what
+    is left over, so they fill it. Empty when there is no income, or when the
+    plan spends more than comes in (the page says so instead: a bar can't
+    show more than its whole).
 
-    The order is the colour order the palette was validated in, which puts
-    savings between bills' orange and debt's pink. With no savings the two
-    touch; they are just under the palette's separation floor, so the bar's
-    gaps and its legend are what tell them apart then."""
+    The order is the colour order the palette was validated in: orange, blue,
+    green, pink. Spends' green and debt's pink are in the colour-blind
+    floor band, so the bar's gaps and the list under it tell them apart."""
     if summary.income <= 0 or summary.spare < 0:
         return []
     parts = [
         ("Bills", summary.bills, "c-out", "bills"),
         ("Savings", summary.savings, "c-save", "savings"),
+        ("Spends", summary.spends, "c-spends", "spends"),
         ("Debt", summary.debt, "c-debt", "debt"),
-        ("Other transfers", summary.transfers, "c-pots", "transfers"),
-        ("Spare", summary.spare, "c-spare", ""),
     ]
     return [
         Share(label, amount, (amount * 100 + summary.income // 2) // summary.income, css, part)
@@ -790,13 +803,7 @@ def insights_page(request: Request) -> Any:
             "doc": doc,
             "today": today,
             "flows": flows,
-            "paid_in": sum(f.paid_in for f in flows),
-            "paid_out": sum(f.paid_out for f in flows),
-            # Full months only, as the pots' averages are: the current month
-            # is part-way through, and before payday it would drag this down.
-            "average_month": calc.average(sum(f.net for f in flows[:-1]), len(flows) - 1),
             "balance_chart": charts.balance_chart(flows),
-            "flow_chart": charts.flow_chart(flows),
             "health": calc.pot_health(doc, today),
             "summary": summary,
             "split": _income_split(summary),
@@ -811,8 +818,8 @@ def insights_page(request: Request) -> Any:
 _PART_TITLES = {
     "bills": "Bills",
     "savings": "Savings",
+    "spends": "Spends",
     "debt": "Debt",
-    "transfers": "Other transfers",
 }
 
 
@@ -884,6 +891,7 @@ def line_edit(
     side: str = Form(...),
     was: str = Form(default=""),
     active: str = Form(default=""),
+    purpose: str = Form(default=""),
     debt: str = Form(default=""),
 ) -> Any:
     """Save a line. `was` is the side the page was rendered with: the line
@@ -891,6 +899,8 @@ def line_edit(
     someone else moved the line doesn't move it back."""
     if side not in ("income", "outgoing"):
         raise InvalidInput("A line is either money in or money out.")
+    if purpose:
+        _purpose(purpose)  # a bad one is refused before the document is read
 
     def change(doc: Document) -> Document:
         found = _find_line(doc, line_id)
@@ -901,11 +911,16 @@ def line_edit(
             line.name = name.strip()
         line.amount_pence = _amount(amount)
         line.active = bool(active)
-        # Only money out can be a debt; a line moved to income loses the
-        # flag rather than carrying one it can't show.
+        # Only money out has a purpose; a line moved to income loses it
+        # rather than carrying one it can't show, and one moved to money out
+        # without a choice starts as bills.
         moving = side != (was or current)
         target = side if moving else current
-        line.debt = target == "outgoing" and bool(debt)
+        if target == "income":
+            line.category, line.debt = None, False
+        else:
+            stored = line.purpose if current == "outgoing" else None
+            line.set_purpose(_line_purpose(purpose, debt, stored) or "bills")
         if target != current:
             if current == "income":
                 doc.income = [x for x in doc.income if x.id != line_id]
@@ -924,14 +939,17 @@ def monthly_add(
     kind: str = Form(...),
     name: str = Form(...),
     amount: str = Form(default=""),
+    purpose: str = Form(default=""),
     debt: str = Form(default=""),
 ) -> Any:
+    chosen = (_line_purpose(purpose, debt, None) or "bills") if kind != "income" else None
+
     def change(doc: Document) -> Document:
         line = Line(name=name.strip(), amount_pence=_amount(amount))
-        if kind == "income":
+        if chosen is None:
             doc.income.append(line)
         else:
-            line.debt = bool(debt)
+            line.set_purpose(chosen)
             doc.outgoings.append(line)
         return doc
 

@@ -429,45 +429,37 @@ def november(monkeypatch):
 def test_insights_shows_the_year_the_pots_and_the_split(client, stored, november):
     html = client.get("/insights").text
 
-    assert "Saved, 12 months" in html
-    assert "-£300" in html  # the one spend; the imports aren't saving
+    # The plan comes first, and the in-and-out chart and its tiles are gone.
+    assert html.index("Where the income goes") < html.index("Savings balance")
+    assert "Saved, 12 months" not in html and "In and out" not in html
+    assert "Bills a month" not in html  # nor the plan's tiles
     assert "September 2026: £7,475" in html  # the balance chart's tip for that month
-    assert "September 2026: in £0, out £300, net -£300" in html
     # Every pot, linked, with a verdict; Car is overdrawn by its spend.
     for pot in stored.pots:
         assert f'href="/pots/{pot.id}"' in html
     assert "overdrawn" in html
-    # Income 5000: bills 1000, savings 500 (the pots), other transfers 1100, spare 2400.
-    assert "Bills £1,000" in html and "20%" in html
-    assert "Savings £500" in html and "Other transfers £1,100" in html
-    assert "Spare £2,400" in html and "48%" in html
-    assert "Debt £" not in html  # a part with nothing in it isn't drawn
+    # Income 5000: bills 1000, savings 500 (the pots), and spends the other
+    # transfer's 1100 plus the 2400 left over. The bar's label and the list
+    # under it both say so.
+    assert 'aria-label="Bills £1,000 (20%), Savings £500 (10%), Spends £3,500 (70%)"' in html
+    rows = html[html.index('<table class="parts">') :]
+    rows = rows[: rows.index("</table>")]
+    assert "Spends</a></td>" in rows and "£3,500" in rows and "70%" in rows
+    assert "Debt" not in rows  # a part with nothing in it isn't drawn
+    assert "Other transfers" not in html and "Spare" not in html
 
 
 def test_insights_shows_debt_savings_and_spends_apart(client, stored, november):
     mortgage = next(line for line in stored.outgoings if line.name == "Mortgage")
     car = pot_named(stored, "Car")
-    edit_line(client, mortgage, debt="1")
+    edit_line(client, mortgage, purpose="debt")
     client.post(
         f"/pots/{car.id}/edit",
         data={"name": "Car", "monthly": "50", "counts": "1", "purpose": "debt"},
     )
     html = client.get("/insights").text
-    figures = html[html.index("Bills a month") :]
-    assert "£100" in figures[:200]  # Bills
-    assert "£450" in figures[figures.index("Savings a month") :][:200]  # Holidays
-    assert "£950" in figures[figures.index("Debt a month") :][:200]  # Mortgage and Car
-    assert "Bills £100" in html and "Savings £450" in html and "Debt £950" in html
-
-
-def test_the_average_month_leaves_out_the_month_in_progress(client, stored, november):
-    """Before payday the current month nets about nothing, and counting it
-    made the average read about a twelfth low."""
-    car = pot_named(stored, "Car")
-    client.post(f"/pots/{car.id}/entry", data={"amount": "1100", "on": "2026-11-02"})
-    html = client.get("/insights").text
-    figure = html[html.index("Average full month") :]
-    assert "-£27.27" in figure[:200]  # the September spend over 11 full months
+    # Bills, Holidays, the transfer and what's left, Mortgage and Car.
+    assert "Bills £100 (2%), Savings £450 (9%), Spends £3,500 (70%), Debt £950 (19%)" in html
 
 
 def test_insights_says_when_the_plan_spends_more_than_comes_in(client, stored, november):
@@ -500,7 +492,8 @@ def edit_line(client, line, **changes):
         "side": side,
         "was": side,
         "active": "1" if line.active else "",
-        "debt": "1" if line.debt else "",
+        # The page always sends the select; a money-in line shows bills.
+        "purpose": line.purpose if side == "outgoing" else "bills",
     }
     data.update(changes)
     return client.post(f"/monthly/{line.id}/edit", data={k: v for k, v in data.items() if v})
@@ -532,22 +525,25 @@ def test_an_unknown_line_goes_back_to_the_list(client, stored):
 
 def test_editing_a_line_saves_every_field(client, stored):
     mortgage = next(line for line in stored.outgoings if line.name == "Mortgage")
-    edit_line(client, mortgage, name="Home loan", amount="950", debt="1", active="")
+    edit_line(client, mortgage, name="Home loan", amount="950", purpose="debt", active="")
     line = next(x for x in reload().outgoings if x.id == mortgage.id)
-    assert (line.name, line.amount_pence, line.debt, line.active) == (
+    assert (line.name, line.amount_pence, line.purpose, line.debt, line.active) == (
         "Home loan",
         95_000,
+        "debt",
         True,
         False,
     )
-    assert "debt" in client.get("/monthly").text
+    assert "&middot; debt" in client.get("/monthly").text
+    assert '<option value="debt" selected>' in client.get(f"/monthly/{line.id}").text
 
 
-def test_unticking_debt_clears_it(client, stored):
+def test_changing_a_lines_purpose_from_debt_clears_the_flag(client, stored):
     mortgage = next(line for line in stored.outgoings if line.name == "Mortgage")
-    edit_line(client, mortgage, debt="1")
-    edit_line(client, mortgage, debt="")
-    assert next(x for x in reload().outgoings if x.id == mortgage.id).debt is False
+    edit_line(client, mortgage, purpose="debt")
+    edit_line(client, mortgage, purpose="spends")
+    line = next(x for x in reload().outgoings if x.id == mortgage.id)
+    assert (line.purpose, line.debt) == ("spends", False)
 
 
 def test_switching_a_lines_side_moves_it(client, stored):
@@ -562,11 +558,43 @@ def test_switching_a_lines_side_moves_it(client, stored):
     assert salary.id not in [x.id for x in document.income]
 
 
-def test_a_debt_moved_to_money_in_loses_its_flag(client, stored):
-    """Only money out can be a debt, even with the box still ticked."""
+def test_a_debt_moved_to_money_in_loses_its_purpose(client, stored):
+    """Only money out has a purpose, even with the select still on debt."""
     mortgage = next(line for line in stored.outgoings if line.name == "Mortgage")
-    edit_line(client, mortgage, side="income", debt="1")
-    assert next(x for x in reload().income if x.id == mortgage.id).debt is False
+    edit_line(client, mortgage, purpose="debt")
+    edit_line(client, mortgage, side="income", purpose="debt")
+    line = next(x for x in reload().income if x.id == mortgage.id)
+    assert (line.category, line.debt) == (None, False)
+
+
+def test_a_line_moved_to_money_out_starts_as_bills(client, stored):
+    """Its page showed the money-in default, so nothing was chosen."""
+    salary = next(line for line in stored.income if line.name == "Salary")
+    client.post(
+        f"/monthly/{salary.id}/edit",
+        data={"name": "Salary", "amount": "5000", "side": "outgoing", "was": "income"},
+    )
+    assert next(x for x in reload().outgoings if x.id == salary.id).purpose == "bills"
+
+
+def test_a_page_from_before_the_select_still_marks_and_unmarks_a_debt(client, stored):
+    """Such a page posts the old tick box and no purpose."""
+    mortgage = next(line for line in stored.outgoings if line.name == "Mortgage")
+    old_page = {"name": "Mortgage", "amount": "900", "side": "outgoing", "was": "outgoing"}
+    client.post(f"/monthly/{mortgage.id}/edit", data={**old_page, "debt": "1"})
+    assert next(x for x in reload().outgoings if x.id == mortgage.id).purpose == "debt"
+    client.post(f"/monthly/{mortgage.id}/edit", data=old_page)
+    assert next(x for x in reload().outgoings if x.id == mortgage.id).purpose == "bills"
+    client.post("/monthly/add", data={"kind": "outgoing", "name": "Loan", "debt": "1"})
+    assert next(x for x in reload().outgoings if x.name == "Loan").purpose == "debt"
+
+
+def test_a_line_saved_from_a_page_without_the_select_keeps_its_purpose(client, stored):
+    mortgage = next(line for line in stored.outgoings if line.name == "Mortgage")
+    edit_line(client, mortgage, purpose="savings")
+    edit_line(client, mortgage, purpose="", amount="901")
+    line = next(x for x in reload().outgoings if x.id == mortgage.id)
+    assert (line.purpose, line.amount_pence) == ("savings", 90_100)
 
 
 def test_a_save_from_a_stale_page_keeps_another_tabs_move(client, stored):
@@ -607,16 +635,18 @@ def test_editing_a_line_in_place_keeps_the_order(client, stored):
     assert next(x for x in document.outgoings if x.id == bills.id).amount_pence == 11_000
 
 
-def test_the_money_out_footer_splits_bills_and_debt(client, stored):
+def test_the_money_out_footer_splits_the_lines_by_purpose(client, stored):
     """Lines only: a bills pot isn't money out, so it stays off this footer."""
     mortgage = next(line for line in stored.outgoings if line.name == "Mortgage")
-    edit_line(client, mortgage, debt="1")
+    edit_line(client, mortgage, purpose="debt")
     car = pot_named(stored, "Car")
     client.post(
         f"/pots/{car.id}/edit",
         data={"name": "Car", "monthly": "50", "counts": "1", "purpose": "bills"},
     )
     assert "Bills £100 &middot; Debt £900" in client.get("/monthly").text
+    edit_line(client, mortgage, purpose="spends")
+    assert "Bills £100 &middot; Spends £900" in client.get("/monthly").text
 
 
 def test_an_unknown_side_is_refused(client, stored):
@@ -653,9 +683,28 @@ def test_a_pot_opens_in_edit_mode(client, stored):
 def test_add_an_outgoing_debt(client):
     client.post(
         "/monthly/add",
-        data={"kind": "outgoing", "name": "Loan", "amount": "150", "debt": "1"},
+        data={"kind": "outgoing", "name": "Loan", "amount": "150", "purpose": "debt"},
     )
-    assert next(x for x in reload().outgoings if x.name == "Loan").debt is True
+    loan = next(x for x in reload().outgoings if x.name == "Loan")
+    assert (loan.purpose, loan.debt) == ("debt", True)
+
+
+def test_money_in_is_added_without_a_purpose(client):
+    client.post(
+        "/monthly/add",
+        data={"kind": "income", "name": "Bonus", "amount": "150", "purpose": "spends"},
+    )
+    bonus = next(x for x in reload().income if x.name == "Bonus")
+    assert (bonus.category, bonus.debt) == (None, False)
+
+
+def test_an_unknown_line_purpose_is_refused(client, stored):
+    response = client.post(
+        "/monthly/add",
+        data={"kind": "outgoing", "name": "X", "amount": "1", "purpose": "lottery"},
+    )
+    assert response.status_code == 422
+    assert reload() == stored
 
 
 def test_add_and_edit_a_pots_purpose(client, stored):
@@ -674,6 +723,10 @@ def test_add_and_edit_a_pots_purpose(client, stored):
     # Left out, as from a page loaded before the field existed: kept.
     client.post(f"/pots/{pot.id}/edit", data=edit)
     assert pot_named(reload(), "Car loan").purpose == "bills"
+    client.post(f"/pots/{pot.id}/edit", data={**edit, "purpose": "spends"})
+    pot = pot_named(reload(), "Car loan")
+    assert (pot.purpose, pot.debt, pot.bills) == ("spends", False, False)
+    assert "&middot; spends" in client.get("/pots").text
     client.post(f"/pots/{pot.id}/edit", data={**edit, "purpose": "savings"})
     assert pot_named(reload(), "Car loan").purpose == "savings"
 
@@ -684,7 +737,7 @@ def test_an_unknown_pot_purpose_is_refused(client, stored):
         f"/pots/{car.id}/edit", data={"name": "Car", "monthly": "50", "purpose": "lottery"}
     )
     assert response.status_code == 422
-    assert response.json() == {"detail": "A pot is for savings, bills or a debt."}
+    assert response.json() == {"detail": "Pick bills, savings, spends or debt."}
     assert reload() == stored
 
 
@@ -1245,16 +1298,16 @@ def test_a_valuation_for_an_account_that_no_longer_exists_says_so(client, stored
 # --- the plan's breakdowns ----------------------------------------------------
 
 
-def test_each_insights_tile_links_to_its_breakdown(client, stored, november):
+def test_each_part_of_the_plan_links_to_its_breakdown(client, stored, november):
     html = client.get("/insights").text
-    for part in ("bills", "savings", "debt", "transfers"):
+    for part in ("bills", "savings", "spends"):
         assert f'href="/insights/{part}"' in html
 
 
 def test_a_breakdown_lists_what_makes_up_the_figure(client, stored, november):
     mortgage = next(line for line in stored.outgoings if line.name == "Mortgage")
     car = pot_named(stored, "Car")
-    edit_line(client, mortgage, debt="1")
+    edit_line(client, mortgage, purpose="debt")
     client.post(
         f"/pots/{car.id}/edit",
         data={"name": "Car", "monthly": "50", "counts": "1", "purpose": "debt"},
@@ -1269,12 +1322,23 @@ def test_a_breakdown_lists_what_makes_up_the_figure(client, stored, november):
 def test_an_empty_bills_breakdown_says_why(client, stored, november):
     for line in stored.outgoings:
         if line.active:
-            edit_line(client, line, debt="1")
-    assert "Nothing counts as bills" in client.get("/insights/bills").text
+            edit_line(client, line, purpose="debt")
+    assert "Nothing is marked as bills" in client.get("/insights/bills").text
 
 
 def test_an_empty_breakdown_says_why(client, stored, november):
-    assert "Nothing is ticked as a debt" in client.get("/insights/debt").text
+    assert "Nothing is marked as debt" in client.get("/insights/debt").text
+
+
+def test_the_spends_breakdown_includes_the_transfers_and_what_is_left(client, stored, november):
+    html = client.get("/insights/spends").text
+    assert "Spends, £3,500 a month" in html
+    assert "Left over" in html and "£2,400" in html and "£1,100" in html
+
+
+def test_the_old_transfers_breakdown_goes_back_to_insights(client, stored, november):
+    response = client.get("/insights/transfers", follow_redirects=False)
+    assert response.headers["location"] == "/insights"
 
 
 def test_an_unknown_breakdown_goes_back_to_insights(client, stored, november):

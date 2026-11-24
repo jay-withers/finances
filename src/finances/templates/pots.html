@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% from "_ledger.html" import ledger_month %}
-{% from "_pot_purpose.html" import purpose_field %}
+{% from "_purpose.html" import purpose_field %}
 {% block subtitle %}{{ pots_total | money }} across {{ doc.pots | length }}{% endblock %}
 {% block body %}
 

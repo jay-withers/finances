@@ -12,6 +12,7 @@ from hypothesis import strategies as st
 
 from finances import calc
 from finances.model import (
+    PURPOSES,
     Document,
     Line,
     PaydayRun,
@@ -246,9 +247,10 @@ def test_summary_excludes_inactive_lines(doc: Document):
     assert totals.outgoings == 100_000  # the 5000 "Old thing" line is inactive
 
 
-def test_summary_splits_spends_savings_and_debt(doc: Document):
+def test_summary_splits_bills_savings_spends_and_debt(doc: Document):
     """Debt is the ticked lines plus the ticked pots' top-ups; savings the
-    other pots' top-ups; an inactive line counts nowhere."""
+    other pots' top-ups; spends everything else; an inactive line counts
+    nowhere. Flags only, as a document from before `category` has them."""
     mortgage, _bills, old = doc.outgoings
     mortgage.debt = True
     old.debt = True  # inactive
@@ -258,15 +260,42 @@ def test_summary_splits_spends_savings_and_debt(doc: Document):
     assert totals.bills == 10_000
     assert totals.debt == 90_000 + 5_000
     assert totals.savings == 45_000  # Holidays; the general pot isn't topped up
-    assert totals.transfers == 110_000  # the bills account
+    # The bills account transfer, and the 240000 left over.
+    assert totals.spends == 110_000 + 240_000
     assert totals.outgoings == 100_000
-    assert totals.debt_lines == 90_000
+    assert totals.lines == {"bills": 10_000, "savings": 0, "spends": 0, "debt": 90_000}
+
+
+def test_a_line_or_pot_counts_toward_the_purpose_it_is_marked(doc: Document):
+    mortgage, bills, _old = doc.outgoings
+    mortgage.set_purpose("savings")
+    bills.set_purpose("spends")
+    holidays = next(p for p in doc.pots if p.name == "Holidays")
+    holidays.set_purpose("spends")
+    car = next(p for p in doc.pots if p.name == "Car")
+    car.set_purpose("bills")
+    totals = calc.summary(doc)
+    assert totals.bills == 5_000
+    assert totals.savings == 90_000
+    assert totals.debt == 0
+    assert totals.spends == 10_000 + 45_000 + 110_000 + 240_000
+    assert totals.lines == {"bills": 0, "savings": 90_000, "spends": 10_000, "debt": 0}
+
+
+def test_spends_takes_the_overspend_too(doc: Document):
+    """The four always fill income, so planning more than comes in shows as
+    negative spends rather than a part that doesn't add up."""
+    doc.outgoings[0].amount_pence = 400_000
+    totals = calc.summary(doc)
+    assert totals.spare < 0
+    assert totals.spends == 110_000 + totals.spare
 
 
 def test_without_a_pot_tracking_transfer_the_pots_are_not_in_the_plan(doc: Document):
     doc.transfers = [t for t in doc.transfers if not t.tracks_pots]
     totals = calc.summary(doc)
-    assert (totals.savings, totals.debt, totals.transfers) == (0, 0, 110_000)
+    assert (totals.savings, totals.debt) == (0, 0)
+    assert totals.spends == 110_000 + totals.spare
 
 
 def test_summary_spare_ignores_the_remainder_transfer(doc: Document):
@@ -788,9 +817,19 @@ def test_spare_is_always_what_is_left(
 ):
     """income - outgoings - committed == spare, and the pots transfer tracks the pots."""
     doc.income = [Line(name="in", amount_pence=a, active=data.draw(st.booleans())) for a in incomes]
+    # A purpose, or none and the old flag, as a document from before it has.
     doc.outgoings = [
-        Line(name="out", amount_pence=a, debt=data.draw(st.booleans())) for a in outgoings
+        Line(
+            name="out",
+            amount_pence=a,
+            category=data.draw(st.sampled_from([None, *PURPOSES])),
+            debt=data.draw(st.booleans()),
+        )
+        for a in outgoings
     ]
+    for pot in doc.pots:
+        pot.category = data.draw(st.sampled_from([None, *PURPOSES]))
+        pot.debt, pot.bills = data.draw(st.booleans()), data.draw(st.booleans())
     fixed = data.draw(AMOUNT)
     doc.transfers = [
         Transfer(label="pots", amount_pence=data.draw(AMOUNT), tracks_pots=True),
@@ -806,16 +845,18 @@ def test_spare_is_always_what_is_left(
     payday = sum(p.monthly_pence for p in doc.pots if p.counts_toward_payday and not p.archived)
     assert result.savings_and_spends == payday + fixed
     assert result.spare == sum(incomes_active(doc)) - sum(outgoings) - payday - fixed
-    # Split by purpose, the same money: every penny lands in exactly one part.
-    parts = result.bills + result.debt + result.savings + result.transfers
-    assert parts == result.outgoings + result.savings_and_spends
-    bills_pots = sum(
-        p.monthly_pence
-        for p in doc.pots
-        if p.counts_toward_payday and not p.archived and p.bills and not p.debt
-    )
-    assert result.bills == sum(x.amount_pence for x in doc.outgoings if not x.debt) + bills_pots
-    assert result.transfers == fixed
+    # Split by purpose, the same money: every penny of income lands in
+    # exactly one part, spends taking what is left.
+    assert result.bills + result.savings + result.spends + result.debt == result.income
+    for purpose in PURPOSES:
+        lines = sum(x.amount_pence for x in doc.outgoings if x.purpose == purpose)
+        pots = sum(
+            p.monthly_pence
+            for p in doc.pots
+            if p.counts_toward_payday and not p.archived and p.purpose == purpose
+        )
+        extra = fixed + result.spare if purpose == "spends" else 0
+        assert getattr(result, purpose) == lines + pots + extra, purpose
     # Each breakdown adds up to its figure on the insights page.
     for part in calc.PLAN_PARTS:
         listed = sum(i.amount_pence for i in calc.plan_breakdown(doc, part))
@@ -888,6 +929,38 @@ def test_a_bills_pot_moves_its_top_up_from_savings_to_bills(doc: Document):
     totals = calc.summary(doc)
     assert (totals.bills, totals.savings) == (100_000 + 5_000, 45_000)
     assert [i.label for i in calc.plan_breakdown(doc, "bills")] == ["Mortgage", "Bills", "Car"]
+
+
+def test_the_spends_breakdown_lists_the_other_transfers_and_what_is_left(doc: Document):
+    doc.outgoings[1].set_purpose("spends")
+    items = calc.plan_breakdown(doc, "spends")
+    assert [(i.label, i.amount_pence) for i in items] == [
+        (calc.LEFT_OVER, 240_000),
+        ("Bills account", 110_000),
+        ("Bills", 10_000),
+    ]
+
+
+def test_an_overspend_is_named_in_the_spends_breakdown(doc: Document):
+    doc.outgoings[0].amount_pence = 400_000
+    items = calc.plan_breakdown(doc, "spends")
+    assert (calc.OVERSPENT, calc.summary(doc).spare) in [(i.label, i.amount_pence) for i in items]
+    assert calc.LEFT_OVER not in [i.label for i in items]
+
+
+def test_a_purpose_wins_over_the_old_flags_and_keeps_them_in_step():
+    """The flags are what a release from before `category` reads back."""
+    line = Line(name="x", debt=True, category="spends")
+    assert line.purpose == "spends"
+    line.set_purpose("debt")
+    assert (line.category, line.debt) == ("debt", True)
+    line.set_purpose("savings")
+    assert (line.category, line.debt) == ("savings", False)
+    pot = Pot(name="x", debt=True)
+    pot.set_purpose("bills")
+    assert (pot.purpose, pot.debt, pot.bills) == ("bills", False, True)
+    pot.set_purpose("spends")
+    assert (pot.purpose, pot.debt, pot.bills) == ("spends", False, False)
 
 
 def test_a_pot_with_both_flags_counts_as_debt():
