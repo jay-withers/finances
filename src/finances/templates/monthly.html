@@ -47,7 +47,7 @@
   <tbody>{{ rows(doc.outgoings | sort(attribute="amount_pence", reverse=true)) }}</tbody>
   <tfoot>
     <tr><td colspan="2" class="muted">
-      Bills {{ summary.bills | money }} &middot; Debt {{ summary.debt_lines | money }}
+      Bills {{ (summary.outgoings - summary.debt_lines) | money }} &middot; Debt {{ summary.debt_lines | money }}
     </td></tr>
     <tr><th>Total</th><th class="num">{{ summary.outgoings | money }}</th></tr>
   </tfoot>

@@ -212,9 +212,10 @@
     </a>
   {% endfor %}
 </div>
-<p class="muted" style="margin-top:0">Savings are the pots' monthly top-ups. Debt is
-  every Money out line on <a href="/monthly">In / Out</a> and every pot that is ticked
-  as a debt; bills are everything else in Money out.</p>
+<p class="muted" style="margin-top:0">Bills are the Money out lines on
+  <a href="/monthly">In / Out</a> not ticked as a debt, plus the pots marked as bills.
+  Debt is the lines ticked as a debt and the pots marked as one. Savings is every
+  other pot's monthly top-up.</p>
 <div class="card">
   <h3>{{ summary.income | money }} a month, as planned</h3>
   {% if split %}

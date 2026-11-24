@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "_ledger.html" import ledger_month %}
+{% from "_pot_purpose.html" import purpose_field %}
 {% block subtitle %}{{ pots_total | money }} across {{ doc.pots | length }}{% endblock %}
 {% block body %}
 
@@ -11,7 +12,7 @@
   {% for pot in active_pots %}
     <tr>
       <td><a href="/pots/{{ pot.id }}" style="text-decoration:none">{{ pot.name }}</a>
-        {% if pot.debt %}<span class="muted">&middot; debt</span>{% endif %}</td>
+        {% if pot.purpose != 'savings' %}<span class="muted">&middot; {{ pot.purpose }}</span>{% endif %}</td>
       <td class="num muted">
         {% if pot.counts_toward_payday %}{{ pot.monthly_pence | money }}{% else %}&mdash;{% endif %}
       </td>
@@ -55,10 +56,7 @@
       <input type="number" id="monthly" name="monthly" step="0.01" inputmode="decimal"
              placeholder="0 for a pot that is not topped up monthly">
     </div>
-    <div class="field">
-      <label><input type="checkbox" name="debt" value="1" style="width:auto">
-        A debt (its top-up counts as debt, not savings)</label>
-    </div>
+    {{ purpose_field('savings') }}
     <button type="submit">Add</button>
   </form>
 </details>

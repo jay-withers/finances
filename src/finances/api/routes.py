@@ -80,6 +80,13 @@ def _amount(raw: str) -> int:
         raise InvalidInput("That amount isn't a number.") from exc
 
 
+def _purpose(raw: str) -> tuple[bool, bool]:
+    """A pot's purpose from its form, as the (debt, bills) flags it stores."""
+    if raw not in ("savings", "bills", "debt"):
+        raise InvalidInput("A pot is for savings, bills or a debt.")
+    return raw == "debt", raw == "bills"
+
+
 def _today() -> date:
     return datetime.now(UTC).date()
 
@@ -634,10 +641,14 @@ def pot_page(request: Request, pot_id: str, month: str = "") -> Any:
 
 @router.post("/pots/add", include_in_schema=False)
 def pot_add(
-    name: str = Form(...), monthly: str = Form(default=""), debt: str = Form(default="")
+    name: str = Form(...), monthly: str = Form(default=""), purpose: str = Form(default="savings")
 ) -> Any:
+    debt, bills = _purpose(purpose)
+
     def change(doc: Document) -> Document:
-        doc.pots.append(Pot(name=name.strip(), monthly_pence=_amount(monthly), debt=bool(debt)))
+        doc.pots.append(
+            Pot(name=name.strip(), monthly_pence=_amount(monthly), debt=debt, bills=bills)
+        )
         return doc
 
     _apply(change)
@@ -651,8 +662,11 @@ def pot_edit(
     monthly: str = Form(default=""),
     counts: str = Form(default=""),
     archived: str = Form(default=""),
-    debt: str = Form(default=""),
+    purpose: str = Form(default=""),
 ) -> Any:
+    # Left out by a page loaded before the field existed: keep what is stored.
+    flags = _purpose(purpose) if purpose else None
+
     def change(doc: Document) -> Document:
         pot = doc.pot(pot_id)
         if pot is not None:
@@ -660,7 +674,8 @@ def pot_edit(
             pot.monthly_pence = _amount(monthly)
             pot.counts_toward_payday = bool(counts)
             pot.archived = bool(archived)
-            pot.debt = bool(debt)
+            if flags is not None:
+                pot.debt, pot.bills = flags
         return doc
 
     _apply(change)

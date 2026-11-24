@@ -66,6 +66,7 @@ documents = st.builds(
             counts_toward_payday=st.booleans(),
             archived=st.booleans(),
             debt=st.booleans(),
+            bills=st.booleans(),
         ),
         max_size=4,
     ),
@@ -153,3 +154,4 @@ def test_a_document_from_before_debt_reads_as_no_debt():
     doc = Document.from_json(raw)
     assert doc.outgoings[0].debt is False
     assert doc.pots[0].debt is False
+    assert doc.pots[0].bills is False
