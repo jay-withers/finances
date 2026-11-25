@@ -2,6 +2,8 @@
 {% block title %}finances{% endblock %}
 {# No nav: there is nowhere to go until the passcode is in. #}
 {% block nav %}{% endblock %}
+{# Nor the release: it is for someone already signed in. #}
+{% block version %}{% endblock %}
 {% block body %}
 <form method="post" action="/login" class="card">
   <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
