@@ -282,6 +282,35 @@ def test_a_line_or_pot_counts_toward_the_purpose_it_is_marked(doc: Document):
     assert totals.lines == {"bills": 0, "savings": 90_000, "spends": 10_000, "debt": 0}
 
 
+def test_income_split_is_each_part_as_a_share_of_income(doc: Document):
+    """The Insights bar's and the digest's figures: bills, savings, spends,
+    debt in that order, a part with nothing in it left out."""
+    split = calc.income_split(calc.summary(doc))
+    assert [(s.part, s.label, s.amount_pence, s.percent) for s in split] == [
+        ("bills", "Bills", 100_000, 20),
+        ("savings", "Savings", 50_000, 10),
+        ("spends", "Spends", 350_000, 70),
+    ]
+
+
+def test_income_split_is_empty_with_no_income_or_an_overspend(doc: Document):
+    """A whole can't hold more than itself, so neither is drawn as a split."""
+    assert calc.income_split(calc.summary(Document())) == []
+    doc.outgoings[0].amount_pence = 400_000
+    assert calc.income_split(calc.summary(doc)) == []
+
+
+def test_the_largest_in_a_part_is_never_what_is_left_over(doc: Document):
+    bills = calc.largest_in(doc, "bills")
+    assert bills is not None and bills.label == "Mortgage"
+    # Left over (£2,400) is bigger than the bills account transfer.
+    spends = calc.largest_in(doc, "spends")
+    assert spends is not None and spends.label == "Bills account"
+    doc.transfers = [t for t in doc.transfers if t.label != "Bills account"]
+    assert calc.largest_in(doc, "spends") is None
+    assert calc.largest_in(doc, "debt") is None
+
+
 def test_spends_takes_the_overspend_too(doc: Document):
     """The four always fill income, so planning more than comes in shows as
     negative spends rather than a part that doesn't add up."""
@@ -966,3 +995,32 @@ def test_a_purpose_wins_over_the_old_flags_and_keeps_them_in_step():
 def test_a_pot_with_both_flags_counts_as_debt():
     """The form sets one at most, but a stored document could carry both."""
     assert Pot(name="x", debt=True, bills=True).purpose == "debt"
+
+
+_PENCE = st.integers(min_value=0, max_value=10**10)
+
+
+@given(bills=_PENCE, savings=_PENCE, spends=_PENCE, debt=_PENCE)
+def test_income_split_fills_income_and_rounds_each_share(bills, savings, spends, debt):
+    """Spends takes what is left, so whatever the parts the shares sum to
+    income, and each percent is its share rounded to the nearest whole."""
+    income = bills + savings + spends + debt
+    totals = calc.Summary(
+        income=income,
+        outgoings=0,
+        savings_and_spends=0,
+        spare=0,
+        lines=dict.fromkeys(PURPOSES, 0),
+        bills=bills,
+        savings=savings,
+        spends=spends,
+        debt=debt,
+    )
+    split = calc.income_split(totals)
+    if income == 0:
+        assert split == []
+        return
+    assert sum(s.amount_pence for s in split) == income
+    assert all(s.amount_pence > 0 for s in split)
+    for share in split:
+        assert abs(share.percent - share.amount_pence * 100 / income) <= 0.5

@@ -7,7 +7,7 @@ from datetime import date
 import pytest
 
 from finances import digest, mailer
-from finances.model import Document, PaydayRun, Pot, PotEntry, Renewal
+from finances.model import Document, Line, PaydayRun, Pot, PotEntry, Renewal, Transfer
 
 
 class FakeResponse:
@@ -211,3 +211,95 @@ def test_a_week_with_no_movement_says_so(today: date):
     composed = digest.compose(Document(), today)
     assert "No money moved." in composed.text
     assert "No money moved." in composed.html
+
+
+def test_digest_says_where_the_income_goes(doc: Document, today: date):
+    """The Insights split, each part with the biggest thing in it."""
+    composed = digest.compose(doc, today, app_url="https://finances.example.uk")
+
+    text = composed.text
+    assert "Where the income goes" in text
+    # Columns are padded; compare words.
+    section = " ".join(text[text.index("Where the income goes") :].split())
+    assert "Bills £1,000 20%" in section
+    assert "largest: Mortgage £900" in section
+    assert "Savings £500 10%" in section
+    assert "largest: Holidays £450" in section
+    assert "Spends £3,500 70%" in section
+    # What is left over isn't a thing spent on, so it is never the largest.
+    assert "largest: Bills account £1,100" in section
+    assert "Left over" not in section
+    assert "Debt" not in section  # nothing in it
+
+    html = composed.html
+    assert "Where the income goes: £5,000 a month" in html
+    for share in ("Bills", "Savings", "Spends"):
+        assert f'title="{share}"' in html  # a segment of the bar
+    assert "width:70%" in html
+    assert "largest: Mortgage £900" in html
+    assert 'href="https://finances.example.uk/insights"' in html
+    assert "https://finances.example.uk/insights" in text
+
+
+def test_the_income_section_escapes_what_a_person_typed(doc: Document, today: date):
+    doc.outgoings[0].name = "<b>Mortgage</b>"
+    html = digest.compose(doc, today).html
+    assert "<b>Mortgage</b>" not in html
+    assert "largest: &lt;b&gt;Mortgage&lt;/b&gt;" in html
+
+
+def test_the_income_section_names_an_overspend(doc: Document, today: date):
+    doc.outgoings[0].amount_pence = 400_000
+    composed = digest.compose(doc, today)
+    message = "The plan spends £700 a month more than comes in."
+    assert message in composed.text
+    assert message in composed.html
+
+
+def test_the_income_section_with_no_income(today: date):
+    composed = digest.compose(Document(), today)
+    assert "No income recorded." in composed.text
+    assert "No income recorded." in composed.html
+    assert "£0 a month" not in composed.html
+    assert "/insights" not in composed.html  # no app_url, no link
+
+
+def _bar_widths(html: str) -> list[int]:
+    import re
+
+    return [int(w) for w in re.findall(r'<td style="width:(\d+)%;height:12px', html)]
+
+
+def test_the_income_bar_always_fills_its_width(doc: Document, today: date):
+    """Whole percents can round to 99 or 101; the last cell takes the slack,
+    and a part that rounds to 0% gets no cell (its row still names it)."""
+    doc.income = [Line(name="Salary", amount_pence=300)]
+    doc.outgoings = [Line(name="A", amount_pence=100)]
+    doc.pots = [Pot(name="B", monthly_pence=100)]
+    doc.transfers = [Transfer(label="Savings", amount_pence=None, tracks_pots=True)]
+    html = digest.compose(doc, today).html
+    assert _bar_widths(html) == [33, 33, 34]
+
+    doc.income = [Line(name="Salary", amount_pence=1_000_000)]
+    doc.outgoings = [Line(name="Tiny", amount_pence=100)]  # 0.01%
+    html = digest.compose(doc, today).html
+    assert sum(_bar_widths(html)) == 100
+    assert 'title="Bills"' not in html
+    assert "Tiny" in html
+
+
+def test_the_email_colours_are_the_insights_page_colours():
+    """The email draws Insights' bar, so it wears Insights' palette."""
+    import re
+    from pathlib import Path
+
+    import finances
+
+    template = (Path(finances.__file__).parent / "templates" / "insights.html").read_text()
+    css = dict(re.findall(r"--(c-[a-z]+):\s*(#[0-9a-f]{6})", template))
+    assert {
+        "bills": css["c-out"],
+        "savings": css["c-in"],
+        "spends": css["c-spends"],
+        "debt": css["c-debt"],
+    } == digest._PART_COLOURS
