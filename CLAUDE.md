@@ -127,8 +127,11 @@ email, no writes.
   script and `args` picks the subcommand. market-agent took a full outage in
   September 2026 from a stale `command` under `ignore_changes`.
 - `import` is the one-off spreadsheet migration (`make import FILE=...`, local
-  by default, `REMOTE=1` for the blob). It has run; its tests skip because the
-  spreadsheet was removed once the import was verified. Don't build on it.
+  by default, `REMOTE=1` for the blob). It has run. Its tests against the real
+  spreadsheet skip because the file was removed once the import was verified;
+  the rest run against a synthetic workbook `tests/test_importer.py` builds in
+  the sheet's layout (plain values, at the cell addresses `reconcile()` reads).
+  Don't build on it.
 - `seed` writes invented sample data and refuses to run when
   `STATE_CONTAINER_URL` is set.
 - **The digest tells the app's story, not its own.** Its attention list is
