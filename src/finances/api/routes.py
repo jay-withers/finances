@@ -757,36 +757,27 @@ def pot_entry_delete(pot_id: str, entry_id: str, month: str = Form(default="")) 
 
 @dataclass(frozen=True)
 class Share:
-    """One part of the "where the money goes" bar."""
+    """One part of the "where the money goes" bar, with its colour."""
 
     label: str
     amount_pence: int
     percent: int  # of income, whole percent, for the bar's width and label
     css: str  # the part's colour class
-    part: str  # its breakdown page under /insights/, or "" for spare
+    part: str  # its breakdown page under /insights/
+
+
+# The order `calc.income_split` returns is the colour order the palette was
+# validated in: orange, blue, green, pink. Spends' green and debt's pink are
+# in the colour-blind floor band, so the bar's gaps and the list under it tell
+# them apart.
+_SHARE_CSS = {"bills": "c-out", "savings": "c-save", "spends": "c-spends", "debt": "c-debt"}
 
 
 def _income_split(summary: calc.Summary) -> list[Share]:
-    """Bills, savings, spends and debt as shares of income: spends takes what
-    is left over, so they fill it. Empty when there is no income, or when the
-    plan spends more than comes in (the page says so instead: a bar can't
-    show more than its whole).
-
-    The order is the colour order the palette was validated in: orange, blue,
-    green, pink. Spends' green and debt's pink are in the colour-blind
-    floor band, so the bar's gaps and the list under it tell them apart."""
-    if summary.income <= 0 or summary.spare < 0:
-        return []
-    parts = [
-        ("Bills", summary.bills, "c-out", "bills"),
-        ("Savings", summary.savings, "c-save", "savings"),
-        ("Spends", summary.spends, "c-spends", "spends"),
-        ("Debt", summary.debt, "c-debt", "debt"),
-    ]
+    """`calc.income_split`, coloured for the Insights bar."""
     return [
-        Share(label, amount, (amount * 100 + summary.income // 2) // summary.income, css, part)
-        for label, amount, css, part in parts
-        if amount > 0
+        Share(s.label, s.amount_pence, s.percent, _SHARE_CSS[s.part], s.part)
+        for s in calc.income_split(summary)
     ]
 
 

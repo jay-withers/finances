@@ -131,6 +131,10 @@ email, no writes.
   spreadsheet was removed once the import was verified. Don't build on it.
 - `seed` writes invented sample data and refuses to run when
   `STATE_CONTAINER_URL` is set.
+- **The digest tells the app's story, not its own.** Its attention list is
+  `calc.attention` (Today's) and its income split `calc.income_split`
+  (Insights'), so compute a new figure for it in `calc.py`, never in
+  `digest.py`.
 - **The digest logs a line on every run, including a quiet one.** The platform
   can see a crashed job but not a schedule that never fired, so silence must
   never be a normal outcome. `mailer.send` never raises, for the same reason.

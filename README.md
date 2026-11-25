@@ -13,12 +13,15 @@ It exists to make three recurring jobs quicker and harder to forget:
   have gone stale.
 
 The home screen is a tile for each area, each saying whether it needs
-opening. **Today** lists what needs attention right now, and a scheduled job
-emails the same list every Sunday evening. **Insights** opens on where the monthly income
-goes, split into bills, savings, spends and debt, then charts the last twelve
-months of the savings balance and how each pot is heading. Each Money out line
-and each pot is marked as one of the four; spends also takes the payday
-transfers besides the pots and whatever is left over.
+opening. **Today** lists what needs attention right now. **Insights** opens
+on where the monthly income goes, split into bills, savings, spends and debt,
+then charts the last twelve months of the savings balance and how each pot is
+heading. Each Money out line and each pot is marked as one of the four; spends
+also takes the payday transfers besides the pots and whatever is left over.
+
+A scheduled job emails every Sunday evening: Today's list, the last week's
+movements, this month's totals, and the same "where the income goes" split as
+Insights, each part with the largest thing in it.
 
 ## Running it locally
 
@@ -82,7 +85,7 @@ migration time they had drifted £28 apart.
 | | |
 |---|---|
 | `src/finances/model.py` | The document — everything, as held in the blob |
-| `src/finances/calc.py` | Balances, totals, what needs attention, and the insights figures |
+| `src/finances/calc.py` | Balances, totals, what needs attention, and the insights figures (the email's too) |
 | `src/finances/charts.py` | The insights charts' geometry, drawn as inline SVG |
 | `src/finances/money.py` | Pence in, formatted strings out |
 | `src/finances/store.py` | Blob load/save, with an ETag precondition |

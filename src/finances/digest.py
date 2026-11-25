@@ -1,6 +1,7 @@
 """The weekly reminder digest: what the calendar reminders used to do.
 
-Composed from exactly the same `calc.attention()` the Today page renders, so the
+Composed from exactly the same `calc.attention()` the Today page renders, and
+the same `calc.income_split()` as Insights' "where the income goes", so the
 email can never tell a different story from the app it links to.
 
 **This logs a line on every run, including a quiet one.** The shared platform's
@@ -32,10 +33,38 @@ class Digest:
     item_count: int
 
 
+@dataclass(frozen=True)
+class IncomePart:
+    """One part of where the income goes, with the biggest thing in it."""
+
+    share: calc.IncomeShare
+    largest: calc.PlanItem | None
+
+
+def _income_parts(doc: Document, totals: calc.Summary) -> list[IncomePart]:
+    return [IncomePart(s, calc.largest_in(doc, s.part)) for s in calc.income_split(totals)]
+
+
+def _income_note(totals: calc.Summary) -> str:
+    """What the section says when there is no split to show."""
+    if totals.income <= 0:
+        return "No income recorded."
+    return f"The plan spends {format_money(-totals.spare)} a month more than comes in."
+
+
+# The Insights bar's colours (insights.html's --c-out, --c-in, --c-spends,
+# --c-debt), validated there in this order.
+_PART_COLOURS = {"bills": "#c96a2c", "savings": "#4a90d9", "spends": "#4f9e4a", "debt": "#d6578f"}
+
+
+def _app_page(app_url: str, page: str) -> str:
+    return f"{app_url.rstrip('/')}/{page}"
+
+
 def _today_url(app_url: str) -> str:
-    """The app's Today page, which lists exactly what this email does. The
-    root is the home tiles, one tap further from it."""
-    return f"{app_url.rstrip('/')}/today"
+    """The app's Today page, which lists exactly what this email's attention
+    items are. The root is the home tiles, one tap further from it."""
+    return _app_page(app_url, "today")
 
 
 def compose(doc: Document, today: date, app_url: str = "") -> Digest:
@@ -43,6 +72,7 @@ def compose(doc: Document, today: date, app_url: str = "") -> Digest:
     state = calc.attention(doc, today)
     totals = calc.summary(doc)
     recent = calc.recent_movements(doc, today)
+    income = _income_parts(doc, totals)
 
     if state.items:
         subject = f"Finances — {len(state.items)} thing(s) need attention"
@@ -84,6 +114,25 @@ def compose(doc: Document, today: date, app_url: str = "") -> Digest:
     lines.append(f"  Spare     {format_money(totals.spare)}")
     lines.append("")
     lines.append(f"Pots hold {format_money(calc.pots_total(doc))} across {len(doc.pots)} pot(s).")
+    lines.append("")
+
+    lines.append("Where the income goes")
+    lines.append("---------------------")
+    if income:
+        for part in income:
+            share = part.share
+            lines.append(
+                f"  {share.label:<9} {format_money(share.amount_pence):>10}  {share.percent:>3}%"
+            )
+            if part.largest is not None:
+                lines.append(
+                    f"            largest: {part.largest.label} "
+                    f"{format_money(part.largest.amount_pence)}"
+                )
+    else:
+        lines.append(f"  {_income_note(totals)}")
+    if app_url and income:
+        lines.append(f"  {_app_page(app_url, 'insights')}")
     if app_url:
         lines.append("")
         lines.append(_today_url(app_url))
@@ -92,7 +141,7 @@ def compose(doc: Document, today: date, app_url: str = "") -> Digest:
     return Digest(
         subject=subject,
         text=text,
-        html=_html(state, totals, recent, doc, today, app_url),
+        html=_html(state, totals, recent, income, doc, today, app_url),
         item_count=len(state.items),
     )
 
@@ -101,6 +150,7 @@ def _html(
     state: calc.Attention,
     totals: calc.Summary,
     recent: list[calc.Movement],
+    income: list[IncomePart],
     doc: Document,
     today: date,
     app_url: str,
@@ -156,6 +206,55 @@ def _html(
         or '<tr><td style="color:#666">No money moved.</td></tr>'
     )
 
+    # The bar is table cells, not a flexbox or SVG: the one layout every mail
+    # client draws. Colours are the Insights page's, each part also named in
+    # the rows beneath, so the bar never carries the meaning alone.
+    if income:
+        # A part rounding to 0% has no cell, and the last takes what rounding
+        # left, so the widths always make 100%.
+        drawn = [p for p in income if p.share.percent > 0]
+        widths = [p.share.percent for p in drawn]
+        widths[-1] = 100 - sum(widths[:-1])
+        bar = "".join(
+            f'<td style="width:{width}%;height:12px;padding:0;'
+            f'background:{_PART_COLOURS[p.share.part]}" title="{p.share.label}"></td>'
+            for p, width in zip(drawn, widths, strict=True)
+        )
+        income_rows = "".join(
+            f'<tr><td style="padding:2px 12px 2px 0">'
+            f'<span style="display:inline-block;width:10px;height:10px;border-radius:3px;'
+            f'margin-right:6px;background:{_PART_COLOURS[p.share.part]}"></span>'
+            f"{p.share.label}</td>"
+            f'<td style="padding:2px 12px 2px 0;text-align:right">'
+            f"<strong>{format_money(p.share.amount_pence)}</strong></td>"
+            f'<td style="padding:2px 12px 2px 0;text-align:right;color:#666">'
+            f"{p.share.percent}%</td>"
+            f'<td style="padding:2px 0;color:#666">'
+            + (
+                f"largest: {escape(p.largest.label)} {format_money(p.largest.amount_pence)}"
+                if p.largest is not None
+                else ""
+            )
+            + "</td></tr>"
+            for p in income
+        )
+        income_html = (
+            '<table style="width:100%;border-collapse:separate;border-spacing:2px 0;'
+            f'margin:4px 0 8px"><tr>{bar}</tr></table>'
+            f'<table style="border-collapse:collapse">{income_rows}</table>'
+        )
+    else:
+        income_html = f'<p style="color:#666">{escape(_income_note(totals))}</p>'
+    insights_link = (
+        f'<p style="font-size:13px"><a href="{escape(_app_page(app_url, "insights"))}" '
+        'style="color:#1a73e8">See it on Insights</a></p>'
+        if app_url and income
+        else ""
+    )
+    income_heading = "Where the income goes" + (
+        f": {format_money(totals.income)} a month" if income else ""
+    )
+
     link = (
         f'<p><a href="{escape(_today_url(app_url))}" style="color:#1a73e8">Open the app</a></p>'
         if app_url
@@ -171,6 +270,9 @@ def _html(
         f'<table style="border-collapse:collapse">{recent_rows}</table>'
         f'<h3 style="margin-top:24px;font-size:15px">This month</h3>'
         f'<table style="border-collapse:collapse">{summary_rows}</table>'
+        f'<h3 style="margin-top:24px;font-size:15px">{income_heading}</h3>'
+        f"{income_html}"
+        f"{insights_link}"
         f"{link}"
         "</div>"
     )

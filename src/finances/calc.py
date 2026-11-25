@@ -354,6 +354,60 @@ def plan_breakdown(doc: Document, part: str) -> list[PlanItem]:
     return sorted((i for i in items if i.amount_pence), key=lambda i: (-i.amount_pence, i.label))
 
 
+@dataclass(frozen=True)
+class IncomeShare:
+    """One part of "where the income goes": the Insights bar and the digest."""
+
+    label: str
+    amount_pence: int
+    percent: int  # of income, whole percent
+    part: Purpose  # its breakdown page under /insights/
+
+
+_SHARE_LABELS: dict[Purpose, str] = {
+    "bills": "Bills",
+    "savings": "Savings",
+    "spends": "Spends",
+    "debt": "Debt",
+}
+
+
+def income_split(totals: Summary) -> list[IncomeShare]:
+    """Bills, savings, spends and debt as shares of income, in that order:
+    spends takes what is left over, so they fill it. A part with nothing in
+    it is left out. Empty when there is no income, or when the plan spends
+    more than comes in (a whole can't hold more than itself; the Insights
+    page and the digest say so instead).
+    """
+    if totals.income <= 0 or totals.spare < 0:
+        return []
+    amounts: dict[Purpose, int] = {
+        "bills": totals.bills,
+        "savings": totals.savings,
+        "spends": totals.spends,
+        "debt": totals.debt,
+    }
+    return [
+        IncomeShare(
+            _SHARE_LABELS[part],
+            amount,
+            (amount * 100 + totals.income // 2) // totals.income,
+            part,
+        )
+        for part, amount in amounts.items()
+        if amount > 0
+    ]
+
+
+def largest_in(doc: Document, part: str) -> PlanItem | None:
+    """The biggest thing in one part of the plan, for the digest. What is
+    left over (or planned beyond income) isn't a thing, so it never is."""
+    for item in plan_breakdown(doc, part):
+        if item.label not in (LEFT_OVER, OVERSPENT):
+            return item
+    return None
+
+
 # --- renewals -----------------------------------------------------------------
 
 
