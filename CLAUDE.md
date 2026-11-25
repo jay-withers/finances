@@ -267,10 +267,12 @@ Every workflow is a thin caller of
 SHA with the tag as a comment:
 
 - `ci-pre-commit` (`pre-commit / Pre-commit`), `ci-python` (`test / Test`,
-  Python 3.14 to match the image), `ci-codeql`.
+  on `mise.toml`'s Python), `ci-codeql`.
 - `ci-terraform`: validate (`terraform / Terraform`), then a dev plan commented
   on the PR, behind the always-reporting `terraform-plan` gate.
-- `ci-container-build`: builds the image behind the `container-build` gate.
+- `ci-container-build`: builds the image behind the `container-build` gate,
+  and checks its Python is the one `mise.toml` pins, which local runs and CI
+  test on (workflows v1.35.0+; `mise.toml` is in its path filter).
 - `cd-tag` → `cd-publish`, as above.
 - `cd-terraform`: plans dev on merge. A plan with changes opens a
   `terraform-pending` issue, and the user applies by running `cd-terraform`

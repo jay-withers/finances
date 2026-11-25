@@ -59,7 +59,7 @@ make validate       # terraform validate, no credentials; plan/apply/fmt/init as
 
 ## How it is put together
 
-Python 3.14, FastAPI and Jinja2, server-rendered. One image, one process, no
+Python 3.15, FastAPI and Jinja2, server-rendered. One image, one process, no
 build step and no JavaScript framework — the same shape as
 [health][health], and for the same reason: there is nothing here a single
 rendered page cannot do.
