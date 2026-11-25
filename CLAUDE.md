@@ -144,7 +144,11 @@ email, no writes.
 - **`/healthz` answers from memory; `/readyz` reaches the document.** A liveness
   probe that touched storage would turn a blob blip into a restart loop.
   `/healthz` must keep reporting `version` from `IMAGE_TAG`: the smoke test
-  checks it.
+  checks it. The tag, trimmed, shows beside the name in the header of every
+  signed-in page (the `app_version` template global and `base.html`'s
+  `version` block), and nothing when it is unset or blank. Not on the sign-in
+  page (`login.html` empties the block; a new public page should too). That is
+  a choice about the page, not a secret, since `/healthz` reports it to anyone.
 
 ## Deploys: az cli, not terraform apply
 

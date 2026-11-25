@@ -1345,3 +1345,33 @@ def test_an_unknown_breakdown_goes_back_to_insights(client, stored, november):
     response = client.get("/insights/lottery", follow_redirects=False)
     assert response.status_code == 303
     assert response.headers["location"] == "/insights"
+
+
+# --- the release in the header ------------------------------------------------
+
+
+def test_a_signed_in_page_shows_the_release_beside_the_name(client, monkeypatch):
+    monkeypatch.setenv("IMAGE_TAG", "v1.2.3")
+    page = client.get("/")
+    assert page.status_code == 200
+    assert '<span class="version">v1.2.3</span>' in page.text
+
+
+def test_the_sign_in_page_never_shows_the_release(anonymous, monkeypatch):
+    """Not before the passcode. Not a secret either: /healthz reports it."""
+    monkeypatch.setenv("IMAGE_TAG", "v1.2.3")
+    page = anonymous.get("/login")
+    assert page.status_code == 200
+    assert "v1.2.3" not in page.text
+
+
+@pytest.mark.parametrize("tag", [None, "", "  "])
+def test_no_release_is_shown_when_none_is_deployed(client, monkeypatch, tag):
+    """A local `make run` has no IMAGE_TAG; it shows nothing rather than a blank tag."""
+    if tag is None:
+        monkeypatch.delenv("IMAGE_TAG", raising=False)
+    else:
+        monkeypatch.setenv("IMAGE_TAG", tag)
+    page = client.get("/")
+    assert page.status_code == 200
+    assert 'class="version"' not in page.text

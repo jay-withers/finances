@@ -14,6 +14,7 @@ handed.
 from __future__ import annotations
 
 import logging
+import os
 import pathlib
 import re
 from dataclasses import dataclass
@@ -51,6 +52,11 @@ TEMPLATE_DIR = PACKAGE_DIR / "templates"
 
 templates = Jinja2Templates(directory=str(TEMPLATE_DIR))
 templates.env.globals["csrf_token"] = csrf.token
+# The release this revision runs, beside the app's name on every signed-in
+# page: IMAGE_TAG, trimmed, read per render rather than at import. Empty when
+# unset or blank (a local run), which renders nothing where /healthz would
+# say "unknown".
+templates.env.globals["app_version"] = lambda: os.environ.get("IMAGE_TAG", "").strip()
 # Used by every template for money, so that one decision about formatting
 # applies everywhere rather than being re-made per template.
 templates.env.filters["money"] = format_money
