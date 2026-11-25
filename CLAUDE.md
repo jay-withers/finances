@@ -234,18 +234,18 @@ market-agent carry the same one).
   function-scoped-fixture health check off (`_isolated` is autouse). So **a
   property test takes no fixtures**: one `doc` would be shared, and mutated,
   across all its examples.
-- Total coverage is **reported on every PR, never gated** (see
-  `ci-python.yml`). A total threshold would mostly measure how much of the
-  Azure SDK is mocked. `pytest-cov` is not a dependency; the shared workflow
-  injects it. The diff gate below is different: for a change to the blob
-  path, the fake `BlobClient` in `test_store.py` is the right test, since it
-  checks what the code sends, not that a mock was called.
+- **Total coverage must stay at 90% or more** (`coverage-min` in
+  `ci-python.yml`), and so must the lines a PR changes. The table is in the
+  job summary, not a PR comment. `pytest-cov` is not a dependency; the shared
+  workflow injects it. For a change to the blob path, the fake `BlobClient` in
+  `test_store.py` is the right test, since it checks what the code sends, not
+  that a mock was called.
 
-CI gates two more things, both inside `test / Test`: mypy over
-`src/` and `tests/` (`[tool.mypy]` in `pyproject.toml`, so `make typecheck` runs
-the same check) and diff coverage. At least 80%
-of the lines a PR changes in `finances` must be run by a test. Don't meet the
-diff gate with a test that only asserts a mock; test the behaviour.
+CI gates three more things, all inside `test / Test`: mypy over `src/` and
+`tests/` (`[tool.mypy]` in `pyproject.toml`, so `make typecheck` runs the same
+check), ruff (`ruff check` and `ruff format --check`, the same ruff `make lint`
+runs) and the two coverage floors above. Don't meet either floor with a test
+that only asserts a mock; test the behaviour.
 
 ## Docker
 
