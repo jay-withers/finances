@@ -156,7 +156,8 @@ Every workflow calls a shared one in
 [jay-withers/workflows](https://github.com/jay-withers/workflows), pinned by
 SHA.
 
-- **ci-pre-commit**, **ci-python** (pytest, mypy and diff coverage),
+- **ci-pre-commit**, **ci-python** (pytest, mypy, ruff and
+  90% coverage floors),
   **ci-container-build** (build plus Trivy) and **ci-terraform** (validate,
   then a real plan of dev commented on the PR) on pull requests.
   **ci-codeql** scans the workflows.
